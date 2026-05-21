@@ -29,7 +29,7 @@ RSS_FEEDS = {
 bot = telebot.TeleBot(BOT_TOKEN)
 
 def init_db():
-    conn = sqlite3.connect("bot_v19.db")
+    conn = sqlite3.connect("bot_v20.db")
     cursor = conn.cursor()
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS posted_news (
@@ -74,7 +74,6 @@ def get_hashtag(title, summary):
     return "#Футбол"
 
 def extract_image_from_entry(entry):
-    """Вытаскивает ссылку на картинку и гарантированно возвращает FULL HD оригинал"""
     img_url = None
     if hasattr(entry, 'enclosures') and entry.enclosures:
         for enc in entry.enclosures:
@@ -98,22 +97,19 @@ def extract_image_from_entry(entry):
         except:
             pass
 
-    # ТОТАЛЬНОЕ УЛУЧШЕНИЕ КАЧЕСТВА: Умный сброс параметров сжатия
     if img_url:
-        # Для Sports.ru: вырезаем параметры ресайза вида /merchant/, /crop/ или числовые разрешения в пути
         if "sports.ru" in img_url:
             img_url = re.sub(r'/(merchant|crop|resize|reize|preview)/.+?/', '/', img_url)
             img_url = re.sub(r'/(\d+)x(\d+)/', '/', img_url)
             if "%" in img_url:
                 img_url = img_url.split("%")[0]
-        # Для Чемпионата: убираем флаги уменьшения картинок
         elif "championat.com" in img_url:
             img_url = img_url.replace("_reize/", "").replace("_preview/", "")
             
     return img_url
 
 def is_duplicate(new_title):
-    conn = sqlite3.connect("bot_v19.db")
+    conn = sqlite3.connect("bot_v20.db")
     cursor = conn.cursor()
     cursor.execute("SELECT title FROM posted_news ORDER BY id DESC LIMIT 30")
     posted_titles = cursor.fetchall()
@@ -131,12 +127,8 @@ def is_duplicate(new_title):
     return False
 
 def post_to_vk(source, title, summary, link, image_url, tag):
-    """Надежная публикация в ВК через ссылки-сниппеты"""
+    """Тестовая отправка ВСЕХ постов в ВК без каких-либо ограничений"""
     if not VK_TOKEN or VK_TOKEN == "ТВОЙ_ТОКЕН_ВК_СЮДА":
-        return
-
-    ALLOWED_VK_SOURCES = ["Sports.ru", "Чемпионат", "Спорт-Экспресс"]
-    if source not in ALLOWED_VK_SOURCES:
         return
 
     try:
@@ -155,6 +147,7 @@ def post_to_vk(source, title, summary, link, image_url, tag):
             "v": "5.131"
         }
         
+        # Прикрепляем картинку, если она есть, иначе просто ссылку на источник
         if image_url:
             params["attachments"] = f"{link},{image_url}"
         else:
@@ -164,120 +157,7 @@ def post_to_vk(source, title, summary, link, image_url, tag):
         result = response.json()
         
         if "response" in result:
-            print(f"✅ Успешный дубль в ВК! ID: {result['response']['post_id']}")
+            print(f"✅ Тестовый дубль в ВК прошёл! ID поста: {result['response']['post_id']}")
         else:
-            print(f"⚠️ Отказ от ВК API: {result}")
+            print(f"⚠️ ВК
             
-    except Exception as e:
-        print(f"❌ Ошибка соединения с ВК: {e}")
-
-def parse_and_queue():
-    print("🔄 Сканирую источники...")
-    conn = sqlite3.connect("bot_v19.db")
-    cursor = conn.cursor()
-    
-    for source_name, url in RSS_FEEDS.items():
-        try:
-            feed = feedparser.parse(url)
-            for entry in reversed(feed.entries[:4]):
-                link = entry.link
-                
-                cursor.execute("SELECT 1 FROM posted_news WHERE url = ?", (link,))
-                if cursor.fetchone():
-                    continue
-                    
-                cursor.execute("SELECT 1 FROM queue WHERE link = ?", (link,))
-                if cursor.fetchone():
-                    continue
-                
-                title = entry.title
-                summary = entry.get("summary", "")
-                
-                image_url = extract_image_from_entry(entry)
-                
-                if "<" in summary:
-                    import re
-                    summary = re.sub('<[^<]+?>', '', summary)
-                
-                summary = summary.replace("Читать дальше →", "").replace("Читать дальше", "")
-                
-                if len(summary) > 250:
-                    summary = summary[:250] + "..."
-                
-                tag = get_hashtag(title, summary)
-                
-                cursor.execute("""
-                    INSERT INTO queue (source, title, summary, link, tag, image_url)
-                    VALUES (?, ?, ?, ?, ?, ?)
-                """, (source_name, title, summary, link, tag, image_url))
-                conn.commit()
-                
-        except Exception as e:
-            print(f"⚠️ Ошибка RSS {source_name}: {e}")
-            
-    conn.close()
-
-def publish_from_queue():
-    conn = sqlite3.connect("bot_v19.db")
-    cursor = conn.cursor()
-    
-    while True:
-        cursor.execute("SELECT id, source, title, summary, link, tag, image_url FROM queue ORDER BY RANDOM() LIMIT 1")
-        row = cursor.fetchone()
-        
-        if not row:
-            print("💤 Очередь пуста.")
-            conn.close()
-            return
-
-        q_id, source, title, summary, link, tag, image_url = row
-
-        if is_duplicate(title):
-            print(f"🗑️ Удален дубликат: {title}")
-            cursor.execute("DELETE FROM queue WHERE id = ?", (q_id,))
-            conn.commit()
-            continue
-
-        clean_title = title.replace("<", "&lt;").replace(">", "&gt;")
-        clean_summary = summary.replace("<", "&lt;").replace(">", "&gt;")
-        
-        post_text = (
-            f"⚽️ <b>{clean_title}</b>\n\n"
-            f"⚡️ {clean_summary} — <i><a href='{link}'>{source}</a></i>\n\n"
-            f"⚡️ Подписывайся на <a href='https://t.me/onetime_foot'>Ван-Тайм</a> — главный футбольный в один клик!\n\n"
-            f"{tag}"
-        )
-        
-        try:
-            if image_url:
-                bot.send_photo(CHANNEL_ID, image_url, caption=post_text, parse_mode="HTML")
-            else:
-                bot.send_message(CHANNEL_ID, post_text, parse_mode="HTML")
-            print(f"📢 Опубликовано в Telegram: {title} ({source})")
-            
-            post_to_vk(source, title, summary, link, image_url, tag)
-            
-            cursor.execute("INSERT INTO posted_news (url, title) VALUES (?, ?)", (link, title))
-            cursor.execute("DELETE FROM queue WHERE id = ?", (q_id,))
-            conn.commit()
-            break
-            
-        except Exception as e:
-            print(f"❌ Ошибка отправки: {e}")
-            cursor.execute("DELETE FROM queue WHERE id = ?", (q_id,))
-            conn.commit()
-            break
-
-    conn.close()
-
-def main():
-    init_db()
-    while True:
-        parse_and_queue()
-        publish_from_queue()
-        print(f"😴 Засыпаю на 5 минут...")
-        time.sleep(CHECK_INTERVAL)
-
-if __name__ == "__main__":
-    main()
-    
