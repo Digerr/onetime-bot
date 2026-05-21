@@ -3,6 +3,7 @@ import sqlite3
 import feedparser
 import telebot
 import requests
+import re
 
 # Настройки TELEGRAM
 BOT_TOKEN = "8970612151:AAHU6nSkOYjnpW0uLaOEdhZfunh0mrsOmkU"
@@ -28,7 +29,7 @@ RSS_FEEDS = {
 bot = telebot.TeleBot(BOT_TOKEN)
 
 def init_db():
-    conn = sqlite3.connect("bot_v17.db")
+    conn = sqlite3.connect("bot_v19.db")
     cursor = conn.cursor()
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS posted_news (
@@ -73,6 +74,7 @@ def get_hashtag(title, summary):
     return "#Футбол"
 
 def extract_image_from_entry(entry):
+    """Вытаскивает ссылку на картинку и гарантированно возвращает FULL HD оригинал"""
     img_url = None
     if hasattr(entry, 'enclosures') and entry.enclosures:
         for enc in entry.enclosures:
@@ -96,16 +98,22 @@ def extract_image_from_entry(entry):
         except:
             pass
 
+    # ТОТАЛЬНОЕ УЛУЧШЕНИЕ КАЧЕСТВА: Умный сброс параметров сжатия
     if img_url:
-        if "sports.ru" in img_url and "%" in img_url:
-            img_url = img_url.split("%")[0]
-        elif "championat.com" in img_url and "reize" in img_url:
-            img_url = img_url.replace("_reize/", "")
+        # Для Sports.ru: вырезаем параметры ресайза вида /merchant/, /crop/ или числовые разрешения в пути
+        if "sports.ru" in img_url:
+            img_url = re.sub(r'/(merchant|crop|resize|reize|preview)/.+?/', '/', img_url)
+            img_url = re.sub(r'/(\d+)x(\d+)/', '/', img_url)
+            if "%" in img_url:
+                img_url = img_url.split("%")[0]
+        # Для Чемпионата: убираем флаги уменьшения картинок
+        elif "championat.com" in img_url:
+            img_url = img_url.replace("_reize/", "").replace("_preview/", "")
             
     return img_url
 
 def is_duplicate(new_title):
-    conn = sqlite3.connect("bot_v17.db")
+    conn = sqlite3.connect("bot_v19.db")
     cursor = conn.cursor()
     cursor.execute("SELECT title FROM posted_news ORDER BY id DESC LIMIT 30")
     posted_titles = cursor.fetchall()
@@ -123,26 +131,19 @@ def is_duplicate(new_title):
     return False
 
 def post_to_vk(source, title, summary, link, image_url, tag):
-    """Публикация во ВКонтакте с жестким обходом лимита в 50 постов"""
-    if VK_TOKEN == "ТВОЙ_ТОКЕН_ВК_СЮДА" or not VK_GROUP_ID:
+    """Надежная публикация в ВК через ссылки-сниппеты"""
+    if not VK_TOKEN or VK_TOKEN == "ТВОЙ_ТОКЕН_ВК_СЮДА":
         return
 
-    # ФИЛЬТР 1: В ВК идут только посты с картинками
-    if not image_url:
-        print(f"ℹ️ Пропускаем ВК: у новости нет изображения.")
-        return
-
-    # ФИЛЬТР 2: Берем только главные источники, чтобы уложиться в лимит постов
     ALLOWED_VK_SOURCES = ["Sports.ru", "Чемпионат", "Спорт-Экспресс"]
     if source not in ALLOWED_VK_SOURCES:
-        print(f"ℹ️ Пропускаем ВК: источник '{source}' не входит в топ-лист для ВКонтакте.")
         return
 
     try:
         vk_text = (
             f"⚽️ {title}\n\n"
             f"⚡️ {summary}\n\n"
-            f"Источник: {link}\n\n"
+            f"Читать на {source}: {link}\n\n"
             f"{tag}"
         )
         
@@ -151,24 +152,28 @@ def post_to_vk(source, title, summary, link, image_url, tag):
             "from_group": 1,
             "message": vk_text,
             "access_token": VK_TOKEN,
-            "v": "5.131",
-            "attachments": image_url
+            "v": "5.131"
         }
         
+        if image_url:
+            params["attachments"] = f"{link},{image_url}"
+        else:
+            params["attachments"] = link
+            
         response = requests.post("https://api.vk.com/method/wall.post", data=params, timeout=10)
         result = response.json()
         
         if "response" in result:
-            print(f"✅ Главная новость продублирована в ВК! ID: {result['response']['post_id']}")
+            print(f"✅ Успешный дубль в ВК! ID: {result['response']['post_id']}")
         else:
-            print(f"⚠️ Ошибка ВК: {result.get('error', {}).get('error_msg', 'Неизвестная ошибка')}")
+            print(f"⚠️ Отказ от ВК API: {result}")
             
     except Exception as e:
-        print(f"❌ Не удалось отправить пост в ВК: {e}")
+        print(f"❌ Ошибка соединения с ВК: {e}")
 
 def parse_and_queue():
     print("🔄 Сканирую источники...")
-    conn = sqlite3.connect("bot_v17.db")
+    conn = sqlite3.connect("bot_v19.db")
     cursor = conn.cursor()
     
     for source_name, url in RSS_FEEDS.items():
@@ -213,7 +218,7 @@ def parse_and_queue():
     conn.close()
 
 def publish_from_queue():
-    conn = sqlite3.connect("bot_v17.db")
+    conn = sqlite3.connect("bot_v19.db")
     cursor = conn.cursor()
     
     while True:
