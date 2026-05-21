@@ -29,7 +29,7 @@ RSS_FEEDS = {
 bot = telebot.TeleBot(BOT_TOKEN)
 
 def init_db():
-    conn = sqlite3.connect("bot_v21.db")
+    conn = sqlite3.connect("bot_v22.db")
     cursor = conn.cursor()
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS posted_news (
@@ -109,7 +109,7 @@ def extract_image_from_entry(entry):
     return img_url
 
 def is_duplicate(new_title):
-    conn = sqlite3.connect("bot_v21.db")
+    conn = sqlite3.connect("bot_v22.db")
     cursor = conn.cursor()
     cursor.execute("SELECT title FROM posted_news ORDER BY id DESC LIMIT 30")
     posted_titles = cursor.fetchall()
@@ -127,12 +127,18 @@ def is_duplicate(new_title):
     return False
 
 def post_to_vk(source, title, summary, link, image_url, tag):
-    """Тестовая отправка всех постов в ВК, защищенная от падения бота"""
+    """Сверхнадежная отправка чистого текста. ВК сам создаст сниппет из ссылки"""
     if not VK_TOKEN or VK_TOKEN == "ТВОЙ_ТОКЕН_ВК_СЮДА":
         return
 
     try:
-        vk_text = f"⚽️ {title}\n\n⚡️ {summary}\n\nЧитать на {source}: {link}\n\n{tag}"
+        # Ссылка на источник внутри текста заставит ВК автоматически сгенерировать карточку с фото
+        vk_text = (
+            f"⚽️ {title}\n\n"
+            f"⚡️ {summary}\n\n"
+            f"Читать подробнее: {link}\n\n"
+            f"{tag}"
+        )
         
         params = {
             "owner_id": f"-{VK_GROUP_ID}",
@@ -142,20 +148,15 @@ def post_to_vk(source, title, summary, link, image_url, tag):
             "v": "5.131"
         }
         
-        if image_url:
-            params["attachments"] = f"{link},{image_url}"
-        else:
-            params["attachments"] = link
-            
         response = requests.post("https://api.vk.com/method/wall.post", data=params, timeout=10)
-        print(f"ℹ️ Лог ВК ответа: {response.text}")
+        print(f"ℹ️ Ответ ВК сервера: {response.text}")
         
     except Exception as e:
-        print(f"⚠️ Ошибка отправки в ВК: {e}")
+        print(f"⚠️ Исключение при отправке в ВК: {e}")
 
 def parse_and_queue():
     print("🔄 Сканирую источники...")
-    conn = sqlite3.connect("bot_v21.db")
+    conn = sqlite3.connect("bot_v22.db")
     cursor = conn.cursor()
     
     for source_name, url in RSS_FEEDS.items():
@@ -200,7 +201,7 @@ def parse_and_queue():
     conn.close()
 
 def publish_from_queue():
-    conn = sqlite3.connect("bot_v21.db")
+    conn = sqlite3.connect("bot_v22.db")
     cursor = conn.cursor()
     
     while True:
@@ -237,7 +238,7 @@ def publish_from_queue():
                 bot.send_message(CHANNEL_ID, post_text, parse_mode="HTML")
             print(f"📢 Опубликовано в Telegram: {title} ({source})")
             
-            # Запускаем отправку в ВК (теперь она безопасна для работы бота)
+            # Отправляем чистый текстовый запрос
             post_to_vk(source, title, summary, link, image_url, tag)
             
             cursor.execute("INSERT INTO posted_news (url, title) VALUES (?, ?)", (link, title))
