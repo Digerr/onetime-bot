@@ -25,7 +25,7 @@ RSS_FEEDS = {
 bot = telebot.TeleBot(BOT_TOKEN)
 
 def init_db():
-    conn = sqlite3.connect("bot_v3.db")
+    conn = sqlite3.connect("bot_v4.db")
     cursor = conn.cursor()
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS posted_news (
@@ -69,34 +69,38 @@ def get_hashtag(title, summary):
     return "#Интер"
 
 def get_image_url(url):
-    """Парсит страницу статьи и вытаскивает главную картинку"""
+    """Улучшенный парсер картинок, заточенный под спортивные сайты"""
     try:
-        headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'}
-        response = requests.get(url, headers=headers, timeout=5)
+        headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'}
+        response = requests.get(url, headers=headers, timeout=7)
         if response.status_code == 200:
             soup = BeautifulSoup(response.text, 'html.parser')
             
-            # 1. Проверяем стандартный мета-тег для соцсетей (og:image)
+            # 1. Ищем og:image
             meta_img = soup.find("meta", property="og:image")
             if meta_img and meta_img.get("content"):
                 return meta_img["content"]
-            
-            # 2. Если мета-тега нет, берем первую крупную картинку на странице
-            img = soup.find("img")
-            if img and img.get("src"):
-                src = img["src"]
-                if src.startswith("//"):
-                    return "https:" + src
-                elif src.startswith("/"):
-                    return url.split("/")[0] + "//" + url.split("/")[2] + src
-                return src
+                
+            # 2. Ищем twitter:image
+            tw_img = soup.find("meta", name="twitter:image")
+            if tw_img and tw_img.get("content"):
+                return tw_img["content"]
+
+            # 3. Специфический поиск для Спорт-Экспресса и Чемпионата
+            for img in soup.find_all("img"):
+                src = img.get("src", "")
+                # Обычно главные фотки содержать слова 'preview', 'main', 'origin' или большие размеры
+                if "media" in src or "materials" in src or "origin" in src:
+                    if src.startswith("//"): return "https:" + src
+                    if src.startswith("/"): return url.split("/")[0] + "//" + url.split("/")[2] + src
+                    return src
     except Exception as e:
-        print(f"⚠️ Не удалось вытащить картинку по ссылке {url}: {e}")
+        print(f"⚠️ Ошибка поиска картинки: {e}")
     return None
 
 def parse_and_queue():
-    print("🔄 Сканирую 8 футбольных источников на наличие новинок...")
-    conn = sqlite3.connect("bot_v3.db")
+    print("🔄 Сканирую источники...")
+    conn = sqlite3.connect("bot_v4.db")
     cursor = conn.cursor()
     
     for source_name, url in RSS_FEEDS.items():
@@ -125,15 +129,15 @@ def parse_and_queue():
                     VALUES (?, ?, ?, ?, ?)
                 """, (source_name, title, summary, link, tag))
                 conn.commit()
-                print(f"➕ Добавлено в очередь из {source_name}: {title}")
+                print(f"➕ Очередь: {title}")
                 
         except Exception as e:
-            print(f"⚠️ Ошибка сканирования {source_name}: {e}")
+            print(f"⚠️ Ошибка RSS {source_name}: {e}")
             
     conn.close()
 
 def publish_from_queue():
-    conn = sqlite3.connect("bot_v3.db")
+    conn = sqlite3.connect("bot_v4.db")
     cursor = conn.cursor()
     
     cursor.execute("SELECT id, source, title, summary, link, tag FROM queue ORDER BY id ASC LIMIT 1")
@@ -142,35 +146,35 @@ def publish_from_queue():
     if row:
         q_id, source, title, summary, link, tag = row
         
-        # Шаблон текста ПОД КАРТИНКУ
+        # Очищаем текст от возможных символов < и >, чтобы HTML не ругался
+        clean_title = title.replace("<", "&lt;").replace(">", "&gt;")
+        clean_summary = summary.replace("<", "&lt;").replace(">", "&gt;")
+        
+        # Шаблон на чистом HTML
         post_text = (
-            f"📌 **{title}**\n\n"
-            f"📝 {summary} — _[{source}]({link})_\n\n"
-            f"⚡️ Подписывайся на [Ван-Тайм](https://t.me/onetime_foot) — главный футбольный в один клик!\n\n"
+            f"📌 <b>{clean_title}</b>\n\n"
+            f"📝 {clean_summary} — <i><a href='{link}'>{source}</a></i>\n\n"
+            f"⚡️ Подписывайся на <a href='https://t.me/onetime_foot'>Ван-Тайм</a> — главный футбольный в один клик!\n\n"
             f"📌 {tag}"
         )
         
-        # Пытаемся добыть прямую ссылку на фото из статьи
         image_url = get_image_url(link)
         
         try:
             if image_url:
-                # Отправляем КАРТИНКУ, а текст идет как подпись снизу
-                bot.send_photo(CHANNEL_ID, image_url, caption=post_text, parse_mode="Markdown")
+                bot.send_photo(CHANNEL_ID, image_url, caption=post_text, parse_mode="HTML")
             else:
-                # Резервный вариант
-                bot.send_message(CHANNEL_ID, post_text, parse_mode="Markdown", disable_web_page_preview=False)
+                bot.send_message(CHANNEL_ID, post_text, parse_mode="HTML")
                 
-            print(f"📢 Пост опубликован: {title}")
-            
+            print(f"📢 Опубликовано: {title}")
             cursor.execute("INSERT INTO posted_news (url, title) VALUES (?, ?)", (link, title))
             cursor.execute("DELETE FROM queue WHERE id = ?", (q_id,))
             conn.commit()
             
         except Exception as e:
-            print(f"❌ Ошибка отправки поста: {e}")
+            print(f"❌ Ошибка отправки: {e}")
     else:
-        print("💤 Очередь пуста, нечего публиковать.")
+        print("💤 Очередь пуста.")
         
     conn.close()
 
@@ -179,7 +183,7 @@ def main():
     while True:
         parse_and_queue()
         publish_from_queue()
-        print(f"😴 Засыпаю на 10 минут...")
+        print(f"😴 Засыпаю...")
         time.sleep(CHECK_INTERVAL)
 
 if __name__ == "__main__":
