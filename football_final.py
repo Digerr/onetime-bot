@@ -8,7 +8,7 @@ from bs4 import BeautifulSoup
 # Настройки
 BOT_TOKEN = "8970612151:AAHU6nSkOYjnpW0uLaOEdhZfunh0mrsOmkU"
 CHANNEL_ID = "@onetime_foot"
-CHECK_INTERVAL = 600  # 10 минут
+CHECK_INTERVAL = 300  # Интервал изменен на 5 минут (300 секунд)
 
 # Список RSS-лент (8 футбольных источников)
 RSS_FEEDS = {
@@ -25,7 +25,7 @@ RSS_FEEDS = {
 bot = telebot.TeleBot(BOT_TOKEN)
 
 def init_db():
-    conn = sqlite3.connect("bot_v4.db")
+    conn = sqlite3.connect("bot_v5.db")
     cursor = conn.cursor()
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS posted_news (
@@ -56,7 +56,7 @@ def get_hashtag(title, summary):
         return "#ЛаЛига"
     elif "сити" in text or "ливерпуль" in text or "арсенал" in text or "апл" in text or "англия" in text:
         return "#АПЛ"
-    elif "ювентус" in text or "милан" in text or "интер" in text or "серия а" in text:
+    elif "ювентус" in text or "милан" in text or " интер " in text or "серия а" in text:
         return "#СерияА"
     elif "бавария" in text or "боруссия" in text or "бундеслига" in text:
         return "#Бундеслига"
@@ -66,7 +66,7 @@ def get_hashtag(title, summary):
         return "#ЛЧ"
     elif "сборная" in text or "чм-" in text or "евро-" in text:
         return "#Сборные"
-    return "#Интер"
+    return "#Футбол"
 
 def get_image_url(url):
     """Улучшенный парсер картинок, заточенный под спортивные сайты"""
@@ -86,10 +86,9 @@ def get_image_url(url):
             if tw_img and tw_img.get("content"):
                 return tw_img["content"]
 
-            # 3. Специфический поиск для Спорт-Экспресса и Чемпионата
+            # 3. Специфический поиск крупных картинок
             for img in soup.find_all("img"):
                 src = img.get("src", "")
-                # Обычно главные фотки содержать слова 'preview', 'main', 'origin' или большие размеры
                 if "media" in src or "materials" in src or "origin" in src:
                     if src.startswith("//"): return "https:" + src
                     if src.startswith("/"): return url.split("/")[0] + "//" + url.split("/")[2] + src
@@ -100,7 +99,7 @@ def get_image_url(url):
 
 def parse_and_queue():
     print("🔄 Сканирую источники...")
-    conn = sqlite3.connect("bot_v4.db")
+    conn = sqlite3.connect("bot_v5.db")
     cursor = conn.cursor()
     
     for source_name, url in RSS_FEEDS.items():
@@ -137,7 +136,7 @@ def parse_and_queue():
     conn.close()
 
 def publish_from_queue():
-    conn = sqlite3.connect("bot_v4.db")
+    conn = sqlite3.connect("bot_v5.db")
     cursor = conn.cursor()
     
     cursor.execute("SELECT id, source, title, summary, link, tag FROM queue ORDER BY id ASC LIMIT 1")
@@ -146,7 +145,7 @@ def publish_from_queue():
     if row:
         q_id, source, title, summary, link, tag = row
         
-        # Очищаем текст от возможных символов < и >, чтобы HTML не ругался
+        # Очищаем текст от возможных символов < и >, чтобы HTML не ломался
         clean_title = title.replace("<", "&lt;").replace(">", "&gt;")
         clean_summary = summary.replace("<", "&lt;").replace(">", "&gt;")
         
@@ -183,7 +182,7 @@ def main():
     while True:
         parse_and_queue()
         publish_from_queue()
-        print(f"😴 Засыпаю...")
+        print(f"😴 Засыпаю на 5 минут...")
         time.sleep(CHECK_INTERVAL)
 
 if __name__ == "__main__":
