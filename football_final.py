@@ -24,7 +24,7 @@ RSS_FEEDS = {
 bot = telebot.TeleBot(BOT_TOKEN)
 
 def init_db():
-    conn = sqlite3.connect("bot_v12.db")
+    conn = sqlite3.connect("bot_v13.db")
     cursor = conn.cursor()
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS posted_news (
@@ -93,5 +93,141 @@ def extract_image_from_entry(entry):
             pass
 
     if img_url:
-        if "sports.ru" in img_url and "%" in
+        if "sports.ru" in img_url and "%" in img_url:
+            img_url = img_url.split("%")[0]
+        elif "championat.com" in img_url and "reize" in img_url:
+            img_url = img_url.replace("_reize/", "")
+            
+    return img_url
+
+def is_duplicate(new_title):
+    conn = sqlite3.connect("bot_v13.db")
+    cursor = conn.cursor()
+    cursor.execute("SELECT title FROM posted_news ORDER BY id DESC LIMIT 30")
+    posted_titles = cursor.fetchall()
+    conn.close()
+
+    new_words = set([w.lower() for w in new_title.split() if len(w) > 3])
+    if not new_words:
+        return False
+
+    for (old_title,) in posted_titles:
+        old_words = set([w.lower() for w in old_title.split() if len(w) > 3])
+        common_words = new_words.intersection(old_words)
+        if len(common_words) / min(len(new_words), len(old_words)) > 0.55:
+            return True
+    return False
+
+def parse_and_queue():
+    print("🔄 Сканирую источники...")
+    conn = sqlite3.connect("bot_v13.db")
+    cursor = conn.cursor()
+    
+    for source_name, url in RSS_FEEDS.items():
+        try:
+            feed = feedparser.parse(url)
+            for entry in reversed(feed.entries[:4]):
+                link = entry.link
+                
+                cursor.execute("SELECT 1 FROM posted_news WHERE url = ?", (link,))
+                if cursor.fetchone():
+                    continue
+                    
+                cursor.execute("SELECT 1 FROM queue WHERE link = ?", (link,))
+                if cursor.fetchone():
+                    continue
+                
+                title = entry.title
+                summary = entry.get("summary", "")
+                
+                image_url = extract_image_from_entry(entry)
+                
+                if "<" in summary:
+                    import re
+                    summary = re.sub('<[^<]+?>', '', summary)
+                
+                summary = summary.replace("Читать дальше →", "").replace("Читать дальше", "")
+                
+                if len(summary) > 250:
+                    summary = summary[:250] + "..."
+                
+                tag = get_hashtag(title, summary)
+                
+                cursor.execute("""
+                    INSERT INTO queue (source, title, summary, link, tag, image_url)
+                    VALUES (?, ?, ?, ?, ?, ?)
+                """, (source_name, title, summary, link, tag, image_url))
+                conn.commit()
+                
+        except Exception as e:
+            print(f"⚠️ Ошибка RSS {source_name}: {e}")
+            
+    conn.close()
+
+def publish_from_queue():
+    conn = sqlite3.connect("bot_v13.db")
+    cursor = conn.cursor()
+    
+    while True:
+        cursor.execute("SELECT id, source, title, summary, link, tag, image_url FROM queue ORDER BY RANDOM() LIMIT 1")
+        row = cursor.fetchone()
         
+        if not row:
+            print("💤 Очередь пуста.")
+            conn.close()
+            return
+
+        q_id, source, title, summary, link, tag, image_url = row
+
+        if is_duplicate(title):
+            print(f"🗑️ Удален дубликат: {title}")
+            cursor.execute("DELETE FROM queue WHERE id = ?", (q_id,))
+            conn.commit()
+            continue
+
+        clean_title = title.replace("<", "&lt;").replace(">", "&gt;")
+        clean_summary = summary.replace("<", "&lt;").replace(">", "&gt;")
+        
+        post_text = (
+            f"⚽️ <b>{clean_title}</b>\n\n"
+            f"⚡️ {clean_summary} — <i><a href='{link}'>{source}</a></i>\n\n"
+            f"⚡️ Подписывайся на <a href='https://t.me/onetime_foot'>Ван-Тайм</a> — главный футбольный в один клик!\n\n"
+            f"{tag}"
+        )
+        
+        try:
+            if image_url:
+                bot.send_photo(CHANNEL_ID, image_url, caption=post_text, parse_mode="HTML")
+            else:
+                bot.send_message(CHANNEL_ID, post_text, parse_mode="HTML")
+                
+            print(f"📢 Опубликовано: {title} ({source})")
+            cursor.execute("INSERT INTO posted_news (url, title) VALUES (?, ?)", (link, title))
+            cursor.execute("DELETE FROM queue WHERE id = ?", (q_id,))
+            conn.commit()
+            break
+            
+        except Exception as e:
+            print(f"❌ Ошибка отправки (пробуем без фото): {e}")
+            try:
+                bot.send_message(CHANNEL_ID, post_text, parse_mode="HTML")
+                cursor.execute("INSERT INTO posted_news (url, title) VALUES (?, ?)", (link, title))
+            except:
+                pass
+            cursor.execute("DELETE FROM queue WHERE id = ?", (q_id,))
+            conn.commit()
+            break
+
+    conn.close()
+
+def main():
+    init_db()
+    while True:
+        parse_and_queue()
+        publish_from_queue()
+        print(f"😴 Засыпаю на 5 минут...")
+        time.sleep(CHECK_INTERVAL)
+
+if __name__ == "__main__":
+    main()
+    
