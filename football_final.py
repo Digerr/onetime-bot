@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """
 🤖 Футбольный RSS-бот для Telegram и VK
-Версия: 2.10 (Строгий фильтр: публикация ТОЛЬКО с картинками)
+Версия: 2.11 (Исправлен Deadlock взаимной блокировки базы данных)
 """
 
 import time
@@ -14,7 +14,7 @@ import logging
 import signal
 import sys
 import os
-from threading import Lock
+from threading import RLock
 from datetime import datetime, timedelta
 
 # ============================================
@@ -52,7 +52,7 @@ VK_GROUP_ID = os.getenv("VK_GROUP_ID", "238937915")
 TG_INTERVAL = 300  
 VK_DAILY_LIMIT = int(os.getenv("VK_DAILY_LIMIT", "50"))
 
-# ЖЕСТКИЙ ТАЙМАУТ ДЛЯ TELEGRAM API (Защита от зависания сети)
+# ЖЕСТКИЙ ТАЙМАУТ ДЛЯ TELEGRAM API 
 telebot.apihelper.READ_TIMEOUT = 10
 telebot.apihelper.CONNECT_TIMEOUT = 10
 
@@ -73,7 +73,7 @@ RSS_FEEDS = {
 VK_ALLOWED_SOURCES = ["sports.ru", "чемпионат", "спорт-экспресс"]
 
 bot = telebot.TeleBot(BOT_TOKEN)
-db_lock = Lock()
+db_lock = RLock()  # ИСПРАВЛЕНО: Теперь база не заблокирует саму себя!
 
 # ============================================
 # РАБОТА С БАЗОЙ ДАННЫХ
@@ -207,7 +207,6 @@ def extract_image_from_entry(entry):
     return None
 
 def check_image_accessible(url):
-    """Проверяет доступность картинки за 4 секунды, чтобы бот не зависал"""
     try:
         res = requests.head(url, timeout=4, headers={"User-Agent": "Mozilla/5.0"})
         return res.status_code == 200
@@ -404,7 +403,6 @@ def publish_from_queue():
                 conn.commit()
                 continue
             
-            # ЖЕСТКАЯ ПРОВЕРКА КАРТИНКИ: если её нет или она не открывается - удаляем пост из очереди и берем следующий
             if not image_url or not check_image_accessible(image_url):
                 logger.warning(f"⏭️ У новости нет рабочей картинки. Удаляю из очереди и ищу другую...")
                 cursor.execute("DELETE FROM queue WHERE id = ?", (q_id,))
@@ -432,7 +430,8 @@ def publish_from_queue():
                 logger.error(f"❌ Сбой отправки: {e}")
                 cursor.execute("DELETE FROM queue WHERE id = ?", (q_id,))
                 conn.commit()
-                break
+                # Продолжаем цикл, чтобы попробовать следующую новость!
+                continue
         
         conn.close()
 
@@ -450,3 +449,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+    
