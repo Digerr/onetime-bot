@@ -25,7 +25,7 @@ RSS_FEEDS = {
 bot = telebot.TeleBot(BOT_TOKEN)
 
 def init_db():
-    conn = sqlite3.connect("bot_v2.db")
+    conn = sqlite3.connect("bot_v3.db")
     cursor = conn.cursor()
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS posted_news (
@@ -96,7 +96,7 @@ def get_image_url(url):
 
 def parse_and_queue():
     print("🔄 Сканирую 8 футбольных источников на наличие новинок...")
-    conn = sqlite3.connect("bot_v2.db")
+    conn = sqlite3.connect("bot_v3.db")
     cursor = conn.cursor()
     
     for source_name, url in RSS_FEEDS.items():
@@ -133,7 +133,7 @@ def parse_and_queue():
     conn.close()
 
 def publish_from_queue():
-    conn = sqlite3.connect("bot_v2.db")
+    conn = sqlite3.connect("bot_v3.db")
     cursor = conn.cursor()
     
     cursor.execute("SELECT id, source, title, summary, link, tag FROM queue ORDER BY id ASC LIMIT 1")
@@ -142,7 +142,7 @@ def publish_from_queue():
     if row:
         q_id, source, title, summary, link, tag = row
         
-        # Красивый шаблон текста ПОД КАРТИНКУ в стиле Champions Cup
+        # Шаблон текста ПОД КАРТИНКУ
         post_text = (
             f"📌 **{title}**\n\n"
             f"📝 {summary} — _[{source}]({link})_\n\n"
@@ -158,7 +158,7 @@ def publish_from_queue():
                 # Отправляем КАРТИНКУ, а текст идет как подпись снизу
                 bot.send_photo(CHANNEL_ID, image_url, caption=post_text, parse_mode="Markdown")
             else:
-                # Резервный вариант: если у статьи вообще нет фото, шлем просто текст
+                # Резервный вариант
                 bot.send_message(CHANNEL_ID, post_text, parse_mode="Markdown", disable_web_page_preview=False)
                 
             print(f"📢 Пост опубликован: {title}")
