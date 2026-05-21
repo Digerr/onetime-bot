@@ -24,7 +24,7 @@ RSS_FEEDS = {
 bot = telebot.TeleBot(BOT_TOKEN)
 
 def init_db():
-    conn = sqlite3.connect("bot_v8.db")
+    conn = sqlite3.connect("bot_v10.db")
     cursor = conn.cursor()
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS posted_news (
@@ -69,34 +69,45 @@ def get_hashtag(title, summary):
     return "#Футбол"
 
 def extract_image_from_entry(entry):
-    """Вытаскивает ссылку на картинку прямо из тегов RSS-ленты"""
+    """Вытаскивает ссылку на картинку и улучшает её качество до оригинала"""
+    img_url = None
+    
     if hasattr(entry, 'enclosures') and entry.enclosures:
         for enc in entry.enclosures:
             if enc.get('type', '').startswith('image/') or enc.get('href', ''):
-                return enc.get('href')
+                img_url = enc.get('href')
+                break
                 
-    if hasattr(entry, 'media_content') and entry.media_content:
-        return entry.media_content[0].get('url')
+    if not img_url and hasattr(entry, 'media_content') and entry.media_content:
+        img_url = entry.media_content[0].get('url')
         
-    if hasattr(entry, 'links'):
+    if not img_url and hasattr(entry, 'links'):
         for l in entry.links:
             if l.get('rel') == 'enclosure' or l.get('type', '').startswith('image/'):
-                return l.get('href')
+                img_url = l.get('href')
+                break
                 
-    if hasattr(entry, 'summary'):
-        if "<img" in entry.summary:
-            try:
-                start = entry.summary.find('src="') + 5
-                end = entry.summary.find('"', start)
-                img_url = entry.summary[start:end]
-                if img_url.startswith("http"):
-                    return img_url
-            except:
-                pass
-    return None
+    if not img_url and hasattr(entry, 'summary') and "<img" in entry.summary:
+        try:
+            start = entry.summary.find('src="') + 5
+            end = entry.summary.find('"', start)
+            tmp = entry.summary[start:end]
+            if tmp.startswith("http"):
+                img_url = tmp
+        except:
+            pass
+
+    # Превращаем сжатые миниатюры Sports.ru и Чемпионата в оригиналы высокого качества
+    if img_url:
+        if "sports.ru" in img_url and "%" in img_url:
+            img_url = img_url.split("%")[0]
+        elif "championat.com" in img_url and "reize" in img_url:
+            img_url = img_url.replace("_reize/", "")
+            
+    return img_url
 
 def is_duplicate(new_title):
-    conn = sqlite3.connect("bot_v8.db")
+    conn = sqlite3.connect("bot_v10.db")
     cursor = conn.cursor()
     cursor.execute("SELECT title FROM posted_news ORDER BY id DESC LIMIT 30")
     posted_titles = cursor.fetchall()
@@ -115,7 +126,7 @@ def is_duplicate(new_title):
 
 def parse_and_queue():
     print("🔄 Сканирую источники...")
-    conn = sqlite3.connect("bot_v8.db")
+    conn = sqlite3.connect("bot_v10.db")
     cursor = conn.cursor()
     
     for source_name, url in RSS_FEEDS.items():
@@ -158,7 +169,7 @@ def parse_and_queue():
     conn.close()
 
 def publish_from_queue():
-    conn = sqlite3.connect("bot_v8.db")
+    conn = sqlite3.connect("bot_v10.db")
     cursor = conn.cursor()
     
     while True:
@@ -181,10 +192,10 @@ def publish_from_queue():
         clean_title = title.replace("<", "&lt;").replace(">", "&gt;")
         clean_summary = summary.replace("<", "&lt;").replace(">", "&gt;")
         
-        # ЗАМЕНИЛИ СКРЕПКУ НА МЯЧИК ⚽️
+        # Переставили эмодзи: Сверху ⚽️, у текста ⚡️
         post_text = (
-            f"📌 <b>{clean_title}</b>\n\n"
-            f"⚽️ {clean_summary} — <i><a href='{link}'>{source}</a></i>\n\n"
+            f"⚽️ <b>{clean_title}</b>\n\n"
+            f"⚡️ {clean_summary} — <i><a href='{link}'>{source}</a></i>\n\n"
             f"⚡️ Подписывайся на <a href='https://t.me/onetime_foot'>Ван-Тайм</a> — главный футбольный в один клик!\n\n"
             f"📌 {tag}"
         )
