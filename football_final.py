@@ -24,7 +24,7 @@ RSS_FEEDS = {
 bot = telebot.TeleBot(BOT_TOKEN)
 
 def init_db():
-    conn = sqlite3.connect("bot_v7.db")
+    conn = sqlite3.connect("bot_v8.db")
     cursor = conn.cursor()
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS posted_news (
@@ -70,13 +70,11 @@ def get_hashtag(title, summary):
 
 def extract_image_from_entry(entry):
     """Вытаскивает ссылку на картинку прямо из тегов RSS-ленты"""
-    # 1. Проверяем тег enclosures (самый частый случай)
     if hasattr(entry, 'enclosures') and entry.enclosures:
         for enc in entry.enclosures:
             if enc.get('type', '').startswith('image/') or enc.get('href', ''):
                 return enc.get('href')
                 
-    # 2. Проверяем медиа-расширения (Чемпионат, Бомбардир и др.)
     if hasattr(entry, 'media_content') and entry.media_content:
         return entry.media_content[0].get('url')
         
@@ -85,7 +83,6 @@ def extract_image_from_entry(entry):
             if l.get('rel') == 'enclosure' or l.get('type', '').startswith('image/'):
                 return l.get('href')
                 
-    # 3. На крайний случай ищем картинку внутри самого текста превью (summary)
     if hasattr(entry, 'summary'):
         if "<img" in entry.summary:
             try:
@@ -99,7 +96,7 @@ def extract_image_from_entry(entry):
     return None
 
 def is_duplicate(new_title):
-    conn = sqlite3.connect("bot_v7.db")
+    conn = sqlite3.connect("bot_v8.db")
     cursor = conn.cursor()
     cursor.execute("SELECT title FROM posted_news ORDER BY id DESC LIMIT 30")
     posted_titles = cursor.fetchall()
@@ -118,7 +115,7 @@ def is_duplicate(new_title):
 
 def parse_and_queue():
     print("🔄 Сканирую источники...")
-    conn = sqlite3.connect("bot_v7.db")
+    conn = sqlite3.connect("bot_v8.db")
     cursor = conn.cursor()
     
     for source_name, url in RSS_FEEDS.items():
@@ -138,10 +135,8 @@ def parse_and_queue():
                 title = entry.title
                 summary = entry.get("summary", "")
                 
-                # Извлекаем картинку прямо сейчас, пока парсим ленту!
                 image_url = extract_image_from_entry(entry)
                 
-                # Очищаем summary от HTML-тегов, если они там были (например, теги картинок)
                 if "<" in summary:
                     import re
                     summary = re.sub('<[^<]+?>', '', summary)
@@ -163,7 +158,7 @@ def parse_and_queue():
     conn.close()
 
 def publish_from_queue():
-    conn = sqlite3.connect("bot_v7.db")
+    conn = sqlite3.connect("bot_v8.db")
     cursor = conn.cursor()
     
     while True:
@@ -186,16 +181,16 @@ def publish_from_queue():
         clean_title = title.replace("<", "&lt;").replace(">", "&gt;")
         clean_summary = summary.replace("<", "&lt;").replace(">", "&gt;")
         
+        # ЗАМЕНИЛИ СКРЕПКУ НА МЯЧИК ⚽️
         post_text = (
             f"📌 <b>{clean_title}</b>\n\n"
-            f"📝 {clean_summary} — <i><a href='{link}'>{source}</a></i>\n\n"
+            f"⚽️ {clean_summary} — <i><a href='{link}'>{source}</a></i>\n\n"
             f"⚡️ Подписывайся на <a href='https://t.me/onetime_foot'>Ван-Тайм</a> — главный футбольный в один клик!\n\n"
             f"📌 {tag}"
         )
         
         try:
             if image_url:
-                # Отправляем прямую ссылку из RSS
                 bot.send_photo(CHANNEL_ID, image_url, caption=post_text, parse_mode="HTML")
             else:
                 bot.send_message(CHANNEL_ID, post_text, parse_mode="HTML")
@@ -207,4 +202,26 @@ def publish_from_queue():
             break
             
         except Exception as e:
-            
+            print(f"❌ Ошибка отправки (пробуем без фото): {e}")
+            try:
+                bot.send_message(CHANNEL_ID, post_text, parse_mode="HTML")
+                cursor.execute("INSERT INTO posted_news (url, title) VALUES (?, ?)", (link, title))
+            except:
+                pass
+            cursor.execute("DELETE FROM queue WHERE id = ?", (q_id,))
+            conn.commit()
+            break
+
+    conn.close()
+
+def main():
+    init_db()
+    while True:
+        parse_and_queue()
+        publish_from_queue()
+        print(f"😴 Засыпаю на 5 минут...")
+        time.sleep(CHECK_INTERVAL)
+
+if __name__ == "__main__":
+    main()
+    
