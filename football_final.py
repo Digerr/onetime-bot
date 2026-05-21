@@ -10,7 +10,7 @@ BOT_TOKEN = "8970612151:AAHU6nSkOYjnpW0uLaOEdhZfunh0mrsOmkU"
 CHANNEL_ID = "@onetime_foot"
 CHECK_INTERVAL = 300  # 5 минут
 
-# Настройки ВКОНТАКТЕ
+# Настройки ВКОНТАКТЕ (Твой рабочий токен и проверенный ID)
 VK_TOKEN = "vk1.a.loMELO9me0A1TfCHqzeWTPx9WgPMJzduEHk2GS4YiLUNYhkqe5ZItXLYU4-wQby-JZdHr8TGPV9hraOF6h-cDZKBB4nLPBqzPWR5YdKJKQh_GBF-qTEvBIqLFCZFbO4K6h0EM7Y3ABCMQZO89B9IQM0igZiHvQxAkbbAiopRfkFPP2CX8aLWFffa053JpoSCsPuUB0CDafLpwlVNG0_Ptw"
 VK_GROUP_ID = "238937915"
 
@@ -29,7 +29,7 @@ RSS_FEEDS = {
 bot = telebot.TeleBot(BOT_TOKEN)
 
 def init_db():
-    conn = sqlite3.connect("bot_v22.db")
+    conn = sqlite3.connect("bot_v23.db")
     cursor = conn.cursor()
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS posted_news (
@@ -97,6 +97,7 @@ def extract_image_from_entry(entry):
         except:
             pass
 
+    # Умное вытаскивание FULL HD картинок
     if img_url:
         if "sports.ru" in img_url:
             img_url = re.sub(r'/(merchant|crop|resize|reize|preview)/.+?/', '/', img_url)
@@ -109,7 +110,7 @@ def extract_image_from_entry(entry):
     return img_url
 
 def is_duplicate(new_title):
-    conn = sqlite3.connect("bot_v22.db")
+    conn = sqlite3.connect("bot_v23.db")
     cursor = conn.cursor()
     cursor.execute("SELECT title FROM posted_news ORDER BY id DESC LIMIT 30")
     posted_titles = cursor.fetchall()
@@ -127,12 +128,16 @@ def is_duplicate(new_title):
     return False
 
 def post_to_vk(source, title, summary, link, image_url, tag):
-    """Сверхнадежная отправка чистого текста. ВК сам создаст сниппет из ссылки"""
-    if not VK_TOKEN or VK_TOKEN == "ТВОЙ_ТОКЕН_ВК_СЮДА":
+    """Публикация в ВК топ-новостей с HD картинками и обходом лимита в 50 постов"""
+    if not VK_TOKEN:
+        return
+
+    # ВК строго лимитируем по топ-источникам
+    ALLOWED_VK_SOURCES = ["Sports.ru", "Чемпионат", "Спорт-Экспресс"]
+    if source not in ALLOWED_VK_SOURCES:
         return
 
     try:
-        # Ссылка на источник внутри текста заставит ВК автоматически сгенерировать карточку с фото
         vk_text = (
             f"⚽️ {title}\n\n"
             f"⚡️ {summary}\n\n"
@@ -148,15 +153,21 @@ def post_to_vk(source, title, summary, link, image_url, tag):
             "v": "5.131"
         }
         
+        # Передаем ТОЛЬКО прямую ссылку на HD картинку. ВК сам сделает из нее сочный блок
+        if image_url:
+            params["attachments"] = image_url
+        else:
+            params["attachments"] = link
+            
         response = requests.post("https://api.vk.com/method/wall.post", data=params, timeout=10)
-        print(f"ℹ️ Ответ ВК сервера: {response.text}")
+        print(f"ℹ️ Статус дублирования в ВК: {response.text}")
         
     except Exception as e:
-        print(f"⚠️ Исключение при отправке в ВК: {e}")
+        print(f"⚠️ Ошибка отправки в ВК: {e}")
 
 def parse_and_queue():
     print("🔄 Сканирую источники...")
-    conn = sqlite3.connect("bot_v22.db")
+    conn = sqlite3.connect("bot_v23.db")
     cursor = conn.cursor()
     
     for source_name, url in RSS_FEEDS.items():
@@ -201,7 +212,7 @@ def parse_and_queue():
     conn.close()
 
 def publish_from_queue():
-    conn = sqlite3.connect("bot_v22.db")
+    conn = sqlite3.connect("bot_v23.db")
     cursor = conn.cursor()
     
     while True:
@@ -232,13 +243,14 @@ def publish_from_queue():
         )
         
         try:
+            # 1. Публикуем в Telegram (HD картинка + текст)
             if image_url:
                 bot.send_photo(CHANNEL_ID, image_url, caption=post_text, parse_mode="HTML")
             else:
                 bot.send_message(CHANNEL_ID, post_text, parse_mode="HTML")
             print(f"📢 Опубликовано в Telegram: {title} ({source})")
             
-            # Отправляем чистый текстовый запрос
+            # 2. Умное дублирование в ВК
             post_to_vk(source, title, summary, link, image_url, tag)
             
             cursor.execute("INSERT INTO posted_news (url, title) VALUES (?, ?)", (link, title))
