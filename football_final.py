@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """
 🤖 Футбольный RSS-бот для Telegram и VK
-Версия: 2.0 (улучшенная)
+Версия: 2.2 (без интервала VK)
 """
 
 import time
@@ -15,7 +15,7 @@ import signal
 import sys
 import os
 from threading import Lock
-from datetime import datetime
+from datetime import datetime, timedelta
 
 # ============================================
 # НАСТРОЙКА ЛОГИРОВАНИЯ
@@ -48,8 +48,9 @@ CHANNEL_ID = os.getenv("CHANNEL_ID", "@onetime_foot")
 VK_TOKEN = os.getenv("VK_TOKEN", "vk1.a.loMELO9me0A1TfCHqzeWTPx9WgPMJzduEHk2GS4YiLUNYhkqe5ZItXLYU4-wQby-JZdHr8TGPV9hraOF6h-cDZKBB4nLPBqzPWR5YdKJKQh_GBF-qTEvBIqLFCZFbO4K6h0EM7Y3ABCMQZO89B9IQM0igZiHvQxAkbbAiopRfkFPP2CX8aLWFffa053JpoSCsPuUB0CDafLpwlVNG0_Ptw")
 VK_GROUP_ID = os.getenv("VK_GROUP_ID", "238937915")
 
-# Интервал проверки (в секундах)
-CHECK_INTERVAL = int(os.getenv("CHECK_INTERVAL", "300"))  # 5 минут
+# Интервалы публикации
+TG_INTERVAL = int(os.getenv("TG_INTERVAL", "900"))  # 15 минут = 900 секунд
+VK_DAILY_LIMIT = int(os.getenv("VK_DAILY_LIMIT", "50"))  # Максимум постов в день
 
 # ============================================
 # RSS ИСТОЧНИКИ
@@ -90,7 +91,8 @@ def init_db():
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     url TEXT UNIQUE,
                     title TEXT,
-                    published TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                    published TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    posted_to_vk INTEGER DEFAULT 0
                 )
             """)
             
@@ -108,6 +110,15 @@ def init_db():
                 )
             """)
             
+            # Таблица статистики VK (для лимита 50 постов/день)
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS vk_stats (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    post_date DATE,
+                    posts_count INTEGER DEFAULT 0
+                )
+            """)
+            
             # Индексы для ускорения поиска
             cursor.execute("CREATE INDEX IF NOT EXISTS idx_posted_url ON posted_news(url)")
             cursor.execute("CREATE INDEX IF NOT EXISTS idx_queue_link ON queue(link)")
@@ -122,6 +133,64 @@ def init_db():
 def get_db_connection():
     """Возвращает новое подключение к БД"""
     return sqlite3.connect("bot_v24.db", check_same_thread=False)
+
+# ============================================
+# VK СТАТИСТИКА И ЛИМИТЫ
+# ============================================
+def get_vk_posts_today():
+    """Возвращает количество постов в VK за сегодня"""
+    try:
+        with db_lock:
+            conn = get_db_connection()
+            cursor = conn.cursor()
+            
+            today = datetime.now().date()
+            cursor.execute("SELECT posts_count FROM vk_stats WHERE post_date = ?", (today,))
+            result = cursor.fetchone()
+            conn.close()
+            
+            return result[0] if result else 0
+    except Exception as e:
+        logger.error(f"❌ Ошибка получения статистики VK: {e}")
+        return 0
+
+def increment_vk_counter():
+    """Увеличивает счётчик постов VK на 1"""
+    try:
+        with db_lock:
+            conn = get_db_connection()
+            cursor = conn.cursor()
+            
+            today = datetime.now().date()
+            cursor.execute("SELECT posts_count FROM vk_stats WHERE post_date = ?", (today,))
+            result = cursor.fetchone()
+            
+            if result:
+                cursor.execute(
+                    "UPDATE vk_stats SET posts_count = posts_count + 1 WHERE post_date = ?",
+                    (today,)
+                )
+            else:
+                cursor.execute(
+                    "INSERT INTO vk_stats (post_date, posts_count) VALUES (?, 1)",
+                    (today,)
+                )
+            
+            conn.commit()
+            conn.close()
+    except Exception as e:
+        logger.error(f"❌ Ошибка обновления счётчика VK: {e}")
+
+def can_post_to_vk():
+    """Проверяет, можно ли публиковать в VK (только лимит)"""
+    
+    # Проверка дневного лимита
+    posts_today = get_vk_posts_today()
+    if posts_today >= VK_DAILY_LIMIT:
+        logger.warning(f"⚠️ Достигнут лимит VK на сегодня: {posts_today}/{VK_DAILY_LIMIT}")
+        return False
+    
+    return True
 
 # ============================================
 # ОПРЕДЕЛЕНИЕ ХЕШТЕГОВ
@@ -198,6 +267,77 @@ def extract_image_from_entry(entry):
     return None
 
 # ============================================
+# ЗАГРУЗКА ФОТО В VK
+# ============================================
+def upload_photo_to_vk(image_url):
+    """Загружает фото на сервер VK и возвращает attachment"""
+    try:
+        # 1. Получаем URL для загрузки
+        upload_url_response = requests.get(
+            "https://api.vk.com/method/photos.getWallUploadServer",
+            params={
+                "group_id": VK_GROUP_ID,
+                "access_token": VK_TOKEN,
+                "v": "5.131"
+            },
+            timeout=10
+        ).json()
+        
+        if "error" in upload_url_response:
+            logger.error(f"❌ VK getWallUploadServer: {upload_url_response['error']}")
+            return None
+        
+        upload_url = upload_url_response['response']['upload_url']
+        
+        # 2. Скачиваем изображение
+        img_response = requests.get(image_url, timeout=10)
+        if img_response.status_code != 200:
+            logger.error(f"❌ Не удалось скачать фото: {image_url}")
+            return None
+        
+        # 3. Загружаем на сервер VK
+        upload_response = requests.post(
+            upload_url,
+            files={'photo': ('image.jpg', img_response.content, 'image/jpeg')}
+        ).json()
+        
+        if 'photo' not in upload_response:
+            logger.error(f"❌ VK upload ошибка: {upload_response}")
+            return None
+        
+        # 4. Сохраняем фото
+        save_response = requests.get(
+            "https://api.vk.com/method/photos.saveWallPhoto",
+            params={
+                "group_id": VK_GROUP_ID,
+                "photo": upload_response['photo'],
+                "server": upload_response['server'],
+                "hash": upload_response['hash'],
+                "access_token": VK_TOKEN,
+                "v": "5.131"
+            },
+            timeout=10
+        ).json()
+        
+        if "error" in save_response:
+            logger.error(f"❌ VK saveWallPhoto: {save_response['error']}")
+            return None
+        
+        # 5. Формируем attachment
+        photo = save_response['response'][0]
+        attachment = f"photo{photo['owner_id']}_{photo['id']}"
+        
+        logger.info(f"✅ Фото загружено в VK: {attachment}")
+        return attachment
+        
+    except requests.exceptions.Timeout:
+        logger.error("⏱️ Таймаут при загрузке фото в VK")
+        return None
+    except Exception as e:
+        logger.error(f"❌ Ошибка загрузки фото в VK: {e}")
+        return None
+
+# ============================================
 # ПРОВЕРКА ДУБЛИКАТОВ
 # ============================================
 def is_duplicate(new_title):
@@ -239,23 +379,28 @@ def is_duplicate(new_title):
 # ============================================
 # ПУБЛИКАЦИЯ В VK
 # ============================================
-def post_to_vk(source, title, summary, link, tag):
-    """Публикует новость в группу VK"""
+def post_to_vk(source, title, summary, link, image_url, tag):
+    """Публикует новость в группу VK с картинкой"""
     
     # Проверяем, включён ли VK
     if not VK_TOKEN:
-        return
+        return False
     
     # Проверяем, разрешён ли источник
     if source.lower() not in VK_ALLOWED_SOURCES:
         logger.debug(f"⏭️ Источник {source} не публикуется в VK")
-        return
+        return False
+    
+    # Проверяем лимит
+    if not can_post_to_vk():
+        return False
     
     try:
         # Формируем текст поста
         vk_text = (
             f"⚽️ {title}\n\n"
             f"⚡️ {summary}\n\n"
+            f"Читать полностью: {link}\n\n"
             f"{tag}"
         )
         
@@ -264,10 +409,21 @@ def post_to_vk(source, title, summary, link, tag):
             "owner_id": f"-{VK_GROUP_ID}",
             "from_group": 1,
             "message": vk_text,
-            "attachments": link,  # VK сам создаст превью статьи
             "access_token": VK_TOKEN,
             "v": "5.131"
         }
+        
+        # Пытаемся загрузить своё фото
+        if image_url:
+            attachment = upload_photo_to_vk(image_url)
+            if attachment:
+                params["attachments"] = attachment
+            else:
+                # Если не получилось загрузить фото, прикрепляем ссылку
+                params["attachments"] = link
+        else:
+            # Без фото - прикрепляем ссылку для превью
+            params["attachments"] = link
         
         response = requests.post(
             "https://api.vk.com/method/wall.post",
@@ -279,14 +435,25 @@ def post_to_vk(source, title, summary, link, tag):
         
         if "error" in result:
             logger.error(f"❌ VK API ошибка: {result['error']['error_msg']}")
+            return False
         else:
             post_id = result.get('response', {}).get('post_id')
             logger.info(f"✅ Опубликовано в VK: post_{VK_GROUP_ID}_{post_id}")
             
+            # Обновляем счётчик
+            increment_vk_counter()
+            
+            posts_today = get_vk_posts_today()
+            logger.info(f"📊 VK статистика: {posts_today}/{VK_DAILY_LIMIT} постов за сегодня")
+            
+            return True
+            
     except requests.exceptions.Timeout:
         logger.error("⏱️ Таймаут при публикации в VK")
+        return False
     except Exception as e:
         logger.error(f"❌ Ошибка публикации в VK: {e}")
+        return False
 
 # ============================================
 # ПАРСИНГ RSS
@@ -394,114 +561,4 @@ def publish_from_queue():
             conn.close()
             return
         
-        q_id, source, title, summary, link, tag, image_url = row
-        
-        # Проверка на дубликаты
-        if is_duplicate(title):
-            logger.warning(f"🗑️ Удалён дубликат: {title[:50]}...")
-            cursor.execute("DELETE FROM queue WHERE id = ?", (q_id,))
-            conn.commit()
-            conn.close()
-            return
-        
-        # Экранируем HTML-символы
-        clean_title = title.replace("<", "&lt;").replace(">", "&gt;")
-        clean_summary = summary.replace("<", "&lt;").replace(">", "&gt;")
-        
-        # Формируем текст поста для Telegram
-        post_text = (
-            f"⚽️ <b>{clean_title}</b>\n\n"
-            f"⚡️ {clean_summary} — <i><a href='{link}'>{source}</a></i>\n\n"
-            f"⚡️ Подписывайся на <a href='https://t.me/onetime_foot'>Ван-Тайм</a> — главный футбольный в один клик!\n\n"
-            f"{tag}"
-        )
-        
-        # Публикуем в Telegram
-        try:
-            if image_url:
-                bot.send_photo(
-                    CHANNEL_ID,
-                    image_url,
-                    caption=post_text,
-                    parse_mode="HTML"
-                )
-            else:
-                bot.send_message(
-                    CHANNEL_ID,
-                    post_text,
-                    parse_mode="HTML",
-                    disable_web_page_preview=False
-                )
-            
-            logger.info(f"📢 Опубликовано в Telegram: {title[:50]}... ({source})")
-            
-            # Публикуем в VK
-            post_to_vk(source, title, summary, link, tag)
-            
-            # Сохраняем в базу опубликованных
-            cursor.execute("INSERT INTO posted_news (url, title) VALUES (?, ?)", (link, title))
-            
-            # Удаляем из очереди
-            cursor.execute("DELETE FROM queue WHERE id = ?", (q_id,))
-            conn.commit()
-            
-        except telebot.apihelper.ApiTelegramException as e:
-            logger.error(f"❌ Telegram API ошибка: {e}")
-            # Удаляем проблемную запись из очереди
-            cursor.execute("DELETE FROM queue WHERE id = ?", (q_id,))
-            conn.commit()
-            
-        except Exception as e:
-            logger.error(f"❌ Неожиданная ошибка при публикации: {e}")
-            cursor.execute("DELETE FROM queue WHERE id = ?", (q_id,))
-            conn.commit()
-        
-        conn.close()
-
-# ============================================
-# GRACEFUL SHUTDOWN
-# ============================================
-def signal_handler(sig, frame):
-    """Обработчик сигналов для корректной остановки"""
-    logger.info("🛑 Получен сигнал остановки, завершаю работу...")
-    sys.exit(0)
-
-signal.signal(signal.SIGINT, signal_handler)
-signal.signal(signal.SIGTERM, signal_handler)
-
-# ============================================
-# ГЛАВНЫЙ ЦИКЛ
-# ============================================
-def main():
-    """Основная функция бота"""
-    
-    # Инициализация
-    init_db()
-    logger.info("🚀 Бот запущен!")
-    logger.info(f"📺 Telegram канал: {CHANNEL_ID}")
-    logger.info(f"🔄 Интервал проверки: {CHECK_INTERVAL} секунд")
-    
-    try:
-        while True:
-            # Парсим RSS
-            parse_and_queue()
-            
-            # Публикуем из очереди
-            publish_from_queue()
-            
-            # Ждём до следующей итерации
-            logger.info(f"😴 Засыпаю на {CHECK_INTERVAL} секунд...")
-            time.sleep(CHECK_INTERVAL)
-            
-    except KeyboardInterrupt:
-        logger.info("👋 Бот остановлен пользователем")
-    except Exception as e:
-        logger.critical(f"💀 Критическая ошибка: {e}")
-        import traceback
-        traceback.print_exc()
-
-# ============================================
-# ТОЧКА ВХОДА
-# ============================================
-if __name__ == "__main__":
-    main()
+        q_id
