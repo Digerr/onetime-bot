@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """
 🤖 Футбольный RSS-бот для Telegram и VK
-Версия: 2.11 (Исправлен Deadlock взаимной блокировки базы данных)
+Версия: 2.13 (Публикация в VK со ВСЕХ источников)
 """
 
 import time
@@ -70,10 +70,8 @@ RSS_FEEDS = {
     "Soccer.ru": "https://www.soccer.ru/rss/news.xml"
 }
 
-VK_ALLOWED_SOURCES = ["sports.ru", "чемпионат", "спорт-экспресс"]
-
 bot = telebot.TeleBot(BOT_TOKEN)
-db_lock = RLock()  # ИСПРАВЛЕНО: Теперь база не заблокирует саму себя!
+db_lock = RLock()
 
 # ============================================
 # РАБОТА С БАЗОЙ ДАННЫХ
@@ -287,7 +285,8 @@ def is_duplicate(new_title):
         return False
 
 def post_to_vk(source, title, summary, link, image_url, tag):
-    if not VK_TOKEN or source.lower() not in VK_ALLOWED_SOURCES or not can_post_to_vk():
+    # Убрали проверку VK_ALLOWED_SOURCES, теперь все сайты летят в ВК
+    if not VK_TOKEN or not can_post_to_vk():
         return False
     
     try:
@@ -339,6 +338,17 @@ def parse_and_queue():
                     link = entry.get('link', '')
                     if not link:
                         continue
+                    
+                    # ПРОВЕРКА НА СТАРОСТЬ НОВОСТИ (НЕ СТАРШЕ 24 ЧАСОВ)
+                    parsed_date = entry.get('published_parsed') or entry.get('updated_parsed')
+                    if parsed_date:
+                        try:
+                            entry_dt = datetime.fromtimestamp(time.mktime(parsed_date))
+                            if datetime.now() - entry_dt > timedelta(days=1):
+                                logger.warning(f"⏳ Пропущена старая новость ({entry_dt.year} год) из {source_name}")
+                                continue
+                        except:
+                            pass
                     
                     cursor.execute("SELECT 1 FROM posted_news WHERE url = ?", (link,))
                     if cursor.fetchone():
@@ -430,7 +440,6 @@ def publish_from_queue():
                 logger.error(f"❌ Сбой отправки: {e}")
                 cursor.execute("DELETE FROM queue WHERE id = ?", (q_id,))
                 conn.commit()
-                # Продолжаем цикл, чтобы попробовать следующую новость!
                 continue
         
         conn.close()
