@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """
 🤖 Футбольный RSS-бот для Telegram и VK
-Версия: 2.7 (Максимальное логирование всех процессов и ошибок)
+Версия: 2.8 (Исправлена синтаксическая ошибка на строке 433)
 """
 
 import time
@@ -430,5 +430,33 @@ def publish_from_queue():
                 post_to_vk(source, title, summary, link, image_url, tag)
                 
                 cursor.execute("INSERT INTO posted_news (url, title, posted_to_vk) VALUES (?, ?, ?)", (link, title, 1))
-                cursor.execute("DELETE FROM queue WHERE
+                cursor.execute("DELETE FROM queue WHERE id = ?", (q_id,))
+                conn.commit()
+                logger.info("💾 Пост успешно сохранен в базу posted_news и удален из queue")
+                break
                 
+            except Exception as e:
+                logger.error(f"❌ КРИТИЧЕСКАЯ ОШИБКА ОТПРАВКИ В TELEGRAM: {e}")
+                logger.error("👉 Проверь: 1) Добавлен ли бот в канал админом? 2) Верны ли токен и ID канала?")
+                cursor.execute("DELETE FROM queue WHERE id = ?", (q_id,))
+                conn.commit()
+                break
+        
+        conn.close()
+
+def main():
+    init_db()
+    logger.info("🚀 Бот полностью инициализирован и запущен!")
+    while True:
+        try:
+            parse_and_queue()
+            publish_from_queue()
+            logger.info(f"😴 Засыпаю на {TG_INTERVAL} секунд...")
+            time.sleep(TG_INTERVAL)
+        except Exception as e:
+            logger.critical(f"💀 Ошибка в главном цикле main: {e}")
+            time.sleep(60)
+
+if __name__ == "__main__":
+    main()
+    
