@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """
 🤖 Футбольный RSS-бот для Telegram и VK
-Версия: 2.5 (Сброс базы данных на v25)
+Версия: 2.7 (Максимальное логирование всех процессов и ошибок)
 """
 
 import time
@@ -52,6 +52,10 @@ VK_GROUP_ID = os.getenv("VK_GROUP_ID", "238937915")
 TG_INTERVAL = 300  
 VK_DAILY_LIMIT = int(os.getenv("VK_DAILY_LIMIT", "50"))
 
+# ЖЕСТКИЙ ТАЙМАУТ ДЛЯ TELEGRAM API (Защита от зависания сети)
+telebot.apihelper.READ_TIMEOUT = 15
+telebot.apihelper.CONNECT_TIMEOUT = 15
+
 # ============================================
 # RSS ИСТОЧНИКИ
 # ============================================
@@ -72,10 +76,9 @@ bot = telebot.TeleBot(BOT_TOKEN)
 db_lock = Lock()
 
 # ============================================
-# РАБОТА С БАЗОЙ ДАННЫХ (v25)
+# РАБОТА С БАЗОЙ ДАННЫХ
 # ============================================
 def init_db():
-    """Создаёт таблицы в базе данных bot_v25.db"""
     try:
         with db_lock:
             conn = sqlite3.connect("bot_v25.db", check_same_thread=False)
@@ -114,7 +117,7 @@ def init_db():
             conn.close()
             logger.info("✅ База данных v25 инициализирована")
     except Exception as e:
-        logger.error(f"❌ Ошибка инициализации БД: {e}")
+        logger.error(f"❌ Критическая ошибка инициализации БД: {e}")
         sys.exit(1)
 
 def get_db_connection():
@@ -212,12 +215,13 @@ def upload_photo_to_vk(image_url):
         ).json()
         
         if "error" in upload_url_response:
-            logger.error(f"❌ VK getWallUploadServer: {upload_url_response['error']}")
+            logger.error(f"❌ VK Upload Server Error: {upload_url_response['error']}")
             return None
         
         upload_url = upload_url_response['response']['upload_url']
         img_response = requests.get(image_url, timeout=10)
         if img_response.status_code != 200:
+            logger.error(f"❌ VK скачивание фото ошибка: статус {img_response.status_code}")
             return None
         
         upload_response = requests.post(
@@ -226,6 +230,7 @@ def upload_photo_to_vk(image_url):
         ).json()
         
         if 'photo' not in upload_response:
+            logger.error(f"❌ VK фото не загрузилось на сервер: {upload_response}")
             return None
         
         save_response = requests.get(
@@ -242,11 +247,13 @@ def upload_photo_to_vk(image_url):
         ).json()
         
         if "error" in save_response:
+            logger.error(f"❌ VK сохранение фото ошибка: {save_response['error']}")
             return None
         
         photo = save_response['response'][0]
         return f"photo{photo['owner_id']}_{photo['id']}"
-    except:
+    except Exception as e:
+        logger.error(f"❌ Ошибка в upload_photo_to_vk: {e}")
         return None
 
 def is_duplicate(new_title):
@@ -268,7 +275,8 @@ def is_duplicate(new_title):
                 continue
             common_words = new_words.intersection(old_words)
             similarity = len(common_words) / min(len(new_words), len(old_words))
-            if similarity > 0.55:  
+            if similarity > 0.55:
+                logger.info(f"🔍 Найдено совпадение ({int(similarity*100)}%) со старым постом: '{old_title[:40]}...'")
                 return True
         return False
     except Exception as e:
@@ -276,7 +284,13 @@ def is_duplicate(new_title):
         return False
 
 def post_to_vk(source, title, summary, link, image_url, tag):
-    if not VK_TOKEN or source.lower() not in VK_ALLOWED_SOURCES or not can_post_to_vk():
+    if not VK_TOKEN:
+        logger.warning("⚠️ VK_TOKEN отсутствует, публикация в VK пропущена")
+        return False
+    if source.lower() not in VK_ALLOWED_SOURCES:
+        logger.info(f"⏭️ Источник {source} не входит в белый список для VK")
+        return False
+    if not can_post_to_vk():
         return False
     
     try:
@@ -297,16 +311,15 @@ def post_to_vk(source, title, summary, link, image_url, tag):
         
         response = requests.post("https://api.vk.com/method/wall.post", data=params, timeout=10)
         result = response.json()
-        
         if "error" in result:
-            logger.error(f"❌ VK API ошибка: {result['error']['error_msg']}")
+            logger.error(f"❌ Ошибка VK API при посте: {result['error']['error_msg']}")
             return False
         
-        logger.info(f"✅ Опубликовано в VK: post_{VK_GROUP_ID}_{result.get('response', {}).get('post_id')}")
+        logger.info(f"✅ Успешно опубликовано в VK: post_{VK_GROUP_ID}_{result.get('response', {}).get('post_id')}")
         increment_vk_counter()
         return True
     except Exception as e:
-        logger.error(f"❌ Ошибка публикации в VK: {e}")
+        logger.error(f"❌ Критический сбой отправки в VK: {e}")
         return False
 
 # ============================================
@@ -324,11 +337,10 @@ def parse_and_queue():
             try:
                 response = requests.get(url, timeout=10, headers={"User-Agent": "Mozilla/5.0"})
                 if response.status_code != 200:
-                    logger.warning(f"⚠️ {source_name} ответил кодом {response.status_code}")
+                    logger.warning(f"⚠️ {source_name} вернул HTTP код {response.status_code}")
                     continue
                 
                 feed = feedparser.parse(response.content)
-                
                 for entry in reversed(feed.entries[:4]):
                     link = entry.get('link', '')
                     if not link:
@@ -366,17 +378,18 @@ def parse_and_queue():
                         pass
                         
             except requests.exceptions.Timeout:
-                logger.error(f"⏱️ Сайт {source_name} пропущен по таймауту")
+                logger.error(f"⏱️ Сайт {source_name} пропущен по таймауту сети (10с)")
             except Exception as e:
-                logger.error(f"❌ Ошибка парсинга {source_name}: {e}")
+                logger.error(f"❌ Ошибка парсинга ленты {source_name}: {e}")
         
         conn.close()
-    logger.info(f"📊 Добавлено новых записей: {new_count}")
+    logger.info(f"📊 Сканирование окончено. Добавлено в очередь: {new_count} записей")
 
 # ============================================
 # ПУБЛИКАЦИЯ ИЗ ОЧЕРЕДИ
 # ============================================
 def publish_from_queue():
+    logger.info("🎯 Вызываю функцию отправки из очереди...")
     with db_lock:
         conn = get_db_connection()
         cursor = conn.cursor()
@@ -386,12 +399,14 @@ def publish_from_queue():
             row = cursor.fetchone()
             
             if not row:
-                logger.info("💤 Очередь пуста, нечего публиковать")
+                logger.info("💤 В очереди нет записей для публикации")
                 break
             
             q_id, source, title, summary, link, tag, image_url = row
+            logger.info(f"🎲 Выбрана случайная новость из очереди: '{title[:40]}...' ({source})")
+            
             if is_duplicate(title):
-                logger.warning(f"🗑️ Удалён дубликат: {title[:40]}...")
+                logger.warning(f"🗑️ Удаляю дубликат из очереди: {title[:40]}...")
                 cursor.execute("DELETE FROM queue WHERE id = ?", (q_id,))
                 conn.commit()
                 continue
@@ -401,40 +416,19 @@ def publish_from_queue():
             post_text = f"⚽️ <b>{clean_title}</b>\n\n⚡️ {clean_summary} — <i><a href='{link}'>{source}</a></i>\n\n⚡️ Подписывайся на <a href='https://t.me/onetime_foot'>Ван-Тайм</a>!\n\n{tag}"
             
             try:
+                logger.info(f"📡 Попытка отправки в Telegram канал {CHANNEL_ID}...")
                 if image_url:
+                    logger.info(f"🖼️ Отправка с фото: {image_url}")
                     bot.send_photo(CHANNEL_ID, image_url, caption=post_text, parse_mode="HTML")
                 else:
+                    logger.info("📝 Отправка без фото (только текст)")
                     bot.send_message(CHANNEL_ID, post_text, parse_mode="HTML", disable_web_page_preview=False)
                 
-                logger.info(f"📢 Опубликовано в Telegram: {title[:40]}... ({source})")
-                posted_to_vk = post_to_vk(source, title, summary, link, image_url, tag)
+                logger.info(f"📢 ПОБЕДА! Опубликовано в Telegram: {title[:40]}...")
                 
-                cursor.execute("INSERT INTO posted_news (url, title, posted_to_vk) VALUES (?, ?, ?)", (link, title, 1 if posted_to_vk else 0))
-                cursor.execute("DELETE FROM queue WHERE id = ?", (q_id,))
-                conn.commit()
-                break
+                # Попытка дублирования в ВК
+                post_to_vk(source, title, summary, link, image_url, tag)
                 
-            except Exception as e:
-                logger.error(f"❌ Ошибка отправки: {e}")
-                cursor.execute("DELETE FROM queue WHERE id = ?", (q_id,))
-                conn.commit()
-                break
-        
-        conn.close()
-
-def main():
-    init_db()
-    logger.info("🚀 Бот запущен!")
-    while True:
-        try:
-            parse_and_queue()
-            publish_from_queue()
-            logger.info(f"😴 Засыпаю на {TG_INTERVAL} секунд...")
-            time.sleep(TG_INTERVAL)
-        except Exception as e:
-            logger.critical(f"💀 Ошибка цикла: {e}")
-            time.sleep(60)
-
-if __name__ == "__main__":
-    main()
-        
+                cursor.execute("INSERT INTO posted_news (url, title, posted_to_vk) VALUES (?, ?, ?)", (link, title, 1))
+                cursor.execute("DELETE FROM queue WHERE
+                
