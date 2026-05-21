@@ -4,10 +4,14 @@ import feedparser
 import telebot
 import requests
 
-# Настройки
+# Настройки TELEGRAM
 BOT_TOKEN = "8970612151:AAHU6nSkOYjnpW0uLaOEdhZfunh0mrsOmkU"
 CHANNEL_ID = "@onetime_foot"
 CHECK_INTERVAL = 300  # 5 минут
+
+# Настройки ВКОНТАКТЕ
+VK_TOKEN = "vk1.a.loMELO9me0A1TfCHqzeWTPx9WgPMJzduEHk2GS4YiLUNYhkqe5ZItXLYU4-wQby-JZdHr8TGPV9hraOF6h-cDZKBB4nLPBqzPWR5YdKJKQh_GBF-qTEvBIqLFCZFbO4K6h0EM7Y3ABCMQZO89B9IQM0igZiHvQxAkbbAiopRfkFPP2CX8aLWFffa053JpoSCsPuUB0CDafLpwlVNG0_Ptw"
+VK_GROUP_ID = "238937915"
 
 # Список RSS-лент
 RSS_FEEDS = {
@@ -24,7 +28,7 @@ RSS_FEEDS = {
 bot = telebot.TeleBot(BOT_TOKEN)
 
 def init_db():
-    conn = sqlite3.connect("bot_v13.db")
+    conn = sqlite3.connect("bot_v17.db")
     cursor = conn.cursor()
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS posted_news (
@@ -101,7 +105,7 @@ def extract_image_from_entry(entry):
     return img_url
 
 def is_duplicate(new_title):
-    conn = sqlite3.connect("bot_v13.db")
+    conn = sqlite3.connect("bot_v17.db")
     cursor = conn.cursor()
     cursor.execute("SELECT title FROM posted_news ORDER BY id DESC LIMIT 30")
     posted_titles = cursor.fetchall()
@@ -118,9 +122,53 @@ def is_duplicate(new_title):
             return True
     return False
 
+def post_to_vk(source, title, summary, link, image_url, tag):
+    """Публикация во ВКонтакте с жестким обходом лимита в 50 постов"""
+    if VK_TOKEN == "ТВОЙ_ТОКЕН_ВК_СЮДА" or not VK_GROUP_ID:
+        return
+
+    # ФИЛЬТР 1: В ВК идут только посты с картинками
+    if not image_url:
+        print(f"ℹ️ Пропускаем ВК: у новости нет изображения.")
+        return
+
+    # ФИЛЬТР 2: Берем только главные источники, чтобы уложиться в лимит постов
+    ALLOWED_VK_SOURCES = ["Sports.ru", "Чемпионат", "Спорт-Экспресс"]
+    if source not in ALLOWED_VK_SOURCES:
+        print(f"ℹ️ Пропускаем ВК: источник '{source}' не входит в топ-лист для ВКонтакте.")
+        return
+
+    try:
+        vk_text = (
+            f"⚽️ {title}\n\n"
+            f"⚡️ {summary}\n\n"
+            f"Источник: {link}\n\n"
+            f"{tag}"
+        )
+        
+        params = {
+            "owner_id": f"-{VK_GROUP_ID}",
+            "from_group": 1,
+            "message": vk_text,
+            "access_token": VK_TOKEN,
+            "v": "5.131",
+            "attachments": image_url
+        }
+        
+        response = requests.post("https://api.vk.com/method/wall.post", data=params, timeout=10)
+        result = response.json()
+        
+        if "response" in result:
+            print(f"✅ Главная новость продублирована в ВК! ID: {result['response']['post_id']}")
+        else:
+            print(f"⚠️ Ошибка ВК: {result.get('error', {}).get('error_msg', 'Неизвестная ошибка')}")
+            
+    except Exception as e:
+        print(f"❌ Не удалось отправить пост в ВК: {e}")
+
 def parse_and_queue():
     print("🔄 Сканирую источники...")
-    conn = sqlite3.connect("bot_v13.db")
+    conn = sqlite3.connect("bot_v17.db")
     cursor = conn.cursor()
     
     for source_name, url in RSS_FEEDS.items():
@@ -165,7 +213,7 @@ def parse_and_queue():
     conn.close()
 
 def publish_from_queue():
-    conn = sqlite3.connect("bot_v13.db")
+    conn = sqlite3.connect("bot_v17.db")
     cursor = conn.cursor()
     
     while True:
@@ -200,20 +248,17 @@ def publish_from_queue():
                 bot.send_photo(CHANNEL_ID, image_url, caption=post_text, parse_mode="HTML")
             else:
                 bot.send_message(CHANNEL_ID, post_text, parse_mode="HTML")
-                
-            print(f"📢 Опубликовано: {title} ({source})")
+            print(f"📢 Опубликовано в Telegram: {title} ({source})")
+            
+            post_to_vk(source, title, summary, link, image_url, tag)
+            
             cursor.execute("INSERT INTO posted_news (url, title) VALUES (?, ?)", (link, title))
             cursor.execute("DELETE FROM queue WHERE id = ?", (q_id,))
             conn.commit()
             break
             
         except Exception as e:
-            print(f"❌ Ошибка отправки (пробуем без фото): {e}")
-            try:
-                bot.send_message(CHANNEL_ID, post_text, parse_mode="HTML")
-                cursor.execute("INSERT INTO posted_news (url, title) VALUES (?, ?)", (link, title))
-            except:
-                pass
+            print(f"❌ Ошибка отправки: {e}")
             cursor.execute("DELETE FROM queue WHERE id = ?", (q_id,))
             conn.commit()
             break
