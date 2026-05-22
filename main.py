@@ -6,11 +6,12 @@ import json
 import requests
 import time
 from bottle import route, run, static_file, response, request
+from bs4 import BeautifulSoup
 
 DB_NAME = "bot_v25.db"
 CACHE = {}
 
-# Железобетонные актуальные таблицы
+# Железобетонные таблицы (РПЛ, АПЛ, Ла Лига)
 MOCK_TABLES = {
     "RPL": [
         {"pos": 1, "name": "Зенит", "games": 24, "won": 15, "draw": 5, "lost": 4, "points": 50},
@@ -91,56 +92,81 @@ def get_news():
     except:
         return json.dumps([])
 
-# --- ПОЛНОСТЬЮ ОБНОВЛЕННЫЙ ЖИВОЙ ИСТОЧНИК МАТЧЕЙ НА СЕГОДНЯ ---
-def fetch_today_matches():
+# --- ЖЕЛЕЗОБЕТОННЫЙ ПАРСЕР ТЕКУЩИХ МАТЧЕЙ С LIVERESULT ---
+def parse_liveresult_matches():
     now = time.time()
     if 'matches' in CACHE and now - CACHE['matches']['time'] < 30:
         return CACHE['matches']['data']
 
     matches = []
     try:
-        # Используем глобальный открытый спортивный фид текущих матчей дня, который обновляется в реальном времени
-        res = requests.get("https://scores.allfootballapp.com/api/v2/match/today", timeout=5)
+        url = "https://www.liveresult.ru/football/matches/"
+        headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"}
+        res = requests.get(url, headers=headers, timeout=6)
+        
         if res.status_code == 200:
-            for m in res.json().get("data", {}).get("matches", [])[:25]:
-                status_raw = m.get("status", "").lower()
-                is_live = "ing" in status_raw or "live" in status_raw or "1t" in status_raw or "2t" in status_raw
-                
-                status = "🔴 LIVE" if is_live else ("✅ Завершен" if "finish" in status_raw or "ft" in status_raw else "🕐 Скоро")
-                
-                matches.append({
-                    "home": m.get("home_team", {}).get("name", "Команда А"),
-                    "away": m.get("away_team", {}).get("name", "Команда Б"),
-                    "home_img": "", "away_img": "",
-                    "score": f"{m.get('home_score', '-')} : {m.get('away_score', '-')}",
-                    "status": status, "is_live": is_live,
-                    "league": m.get("league_name", "Топ-Турнир")
-                })
-    except:
-        pass
+            soup = BeautifulSoup(res.text, 'html.parser')
+            # Находим контейнеры матчей на сегодня
+            match_rows = soup.find_all('div', class_='match-row')
+            
+            for row in match_rows:
+                try:
+                    # Извлекаем названия команд
+                    teams = row.find_all('div', class_='team-name')
+                    if len(teams) < 2: continue
+                    home = teams[0].text.strip()
+                    away = teams[1].text.strip()
+                    
+                    # Извлекаем счет
+                    score_text = row.find('div', class_='match-score').text.strip().replace(' ', '')
+                    if not score_text or '—' in score_text:
+                        score = "- : -"
+                    else:
+                        score = score_text.replace(':', ' : ')
+                    
+                    # Извлекаем статус / время матча
+                    status_box = row.find('div', class_='match-status')
+                    status_text = status_box.text.strip().lower() if status_box else ""
+                    
+                    is_live = False
+                    if "идёт" in status_text or "live" in status_text or "перерыв" in status_text or "'" in status_text or "мин" in status_text:
+                        status = "🔴 LIVE"
+                        is_live = True
+                    elif "завершен" in status_text or "фт" in status_text or "матч окончен" in status_text:
+                        status = "✅ Завершен"
+                    else:
+                        # Если там просто время (например 18:30)
+                        status = f"🕐 {status_text.upper() if status_text else 'СКОРО'}"
+                        
+                    # Извлекаем название лиги/турнира
+                    try:
+                        league = row.find_previous('div', class_='category-header').text.strip()
+                    except:
+                        league = "Топ-Турнир"
 
-    # Страховочный список СЕГОДНЯШНИХ актуальных матчей, если фид пуст (чтобы на экране всегда был сочный контент)
-    if not matches:
-        matches = [
-            {"home": "Спартак Москва", "away": "ЦСКА Москва", "home_img": "", "away_img": "", "score": "0 : 0", "status": "🔴 LIVE", "is_live": True, "league": "МИР РПЛ"},
-            {"home": "Динамо Москва", "away": "Зенит", "home_img": "", "away_img": "", "score": "1 : 2", "status": "✅ Завершен", "is_live": False, "league": "МИР РПЛ"},
-            {"home": "Реал Мадрид", "away": "Барселона", "home_img": "", "away_img": "", "score": "- : -", "status": "🕐 Сегодня 21:00", "is_live": False, "league": "Ла Лига"},
-            {"home": "Манчестер Сити", "away": "Челси", "home_img": "", "away_img": "", "score": "3 : 1", "status": "✅ Завершен", "is_live": False, "league": "АПЛ"},
-            {"home": "Ювентус", "away": "Милан", "home_img": "", "away_img": "", "score": "- : -", "status": "🕐 Сегодня 21:45", "is_live": False, "league": "Серия А"}
-        ]
+                    matches.append({
+                        "home": home, "away": away, "home_img": "", "away_img": "",
+                        "score": score, "status": status, "is_live": is_live, "league": league
+                    })
+                except:
+                    continue
+    except Exception as e:
+        print("Ошибка парсинга матчей:", e)
 
+    # Если в текущую минуту на сайте пусто или идет пересчет туров, выдаем чистый пустой список,
+    # чтобы фронтенд красиво вывел плашку "Активных матчей нет" без архивного мусора
     CACHE['matches'] = {'data': matches, 'time': now}
     return matches
 
 @route('/api/matches')
 def get_all_matches():
     response.content_type = 'application/json; charset=utf-8'
-    return json.dumps(fetch_today_matches(), ensure_ascii=False)
+    return json.dumps(parse_liveresult_matches(), ensure_ascii=False)
 
 @route('/api/matches/live')
 def get_only_live_matches():
     response.content_type = 'application/json; charset=utf-8'
-    all_m = fetch_today_matches()
+    all_m = parse_liveresult_matches()
     live_m = [m for m in all_m if m["is_live"]]
     return json.dumps(live_m, ensure_ascii=False)
 
