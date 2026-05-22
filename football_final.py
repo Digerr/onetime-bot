@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """
 🤖 Футбольный RSS-бот для Telegram и VK
-Версия: 2.16 (Инсайдеры, автоперевод и раздельные тайминги)
+Версия: 2.17 (Инсайдеры, автоперевод, раздельные тайминги + интеграция с сайтом ВАН-ТАЙМ)
 """
 
 import time
@@ -53,7 +53,7 @@ telebot.apihelper.CONNECT_TIMEOUT = 10
 LAST_VK_POST_TIME = 0  
 
 # ============================================
-# RSS ИСТОЧНИКИ
+# RSS ИСТОЧНИКИ (РАСШИРЕННАЯ СОЛЯНКА)
 # ============================================
 RSS_FEEDS = {
     "Спорт-Экспресс": "https://www.sport-express.ru/services/materials/news/football/se/",
@@ -61,10 +61,13 @@ RSS_FEEDS = {
     "Чемпионат": "https://www.championat.com/rss/news/football/",
     "Sky Sports": "https://www.skysports.com/rss/12040",
     "BBC Sport": "https://feeds.bbci.co.uk/sport/football/rss.xml",
-    "Goal.com (Трансферы)": "https://www.goal.com/feeds/en/news"
+    "Goal.com (Трансферы)": "https://www.goal.com/feeds/en/news",
+    # --- НОВЫЕ ТОПОВЫЕ ИСТОЧНИКИ ---
+    "Marca (Испания)": "https://e00-marca.uecdn.es/rss/futbol.xml",
+    "Sky Sports (Трансферы)": "https://www.skysports.com/rss/11095"
 }
 
-FOREIGN_SOURCES = ["Sky Sports", "BBC Sport", "Goal.com (Трансферы)"]
+FOREIGN_SOURCES = ["Sky Sports", "BBC Sport", "Goal.com (Трансферы)", "Marca (Испания)", "Sky Sports (Трансферы)"]
 
 bot = telebot.TeleBot(BOT_TOKEN)
 db_lock = RLock()
@@ -74,11 +77,14 @@ def init_db():
         with db_lock:
             conn = sqlite3.connect("bot_v25.db", check_same_thread=False)
             cursor = conn.cursor()
+            # Добавили поля description и source, если их не было, для работы сайта
             cursor.execute("""
                 CREATE TABLE IF NOT EXISTS posted_news (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     url TEXT UNIQUE,
                     title TEXT,
+                    description TEXT,
+                    source TEXT,
                     published TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                     posted_to_vk INTEGER DEFAULT 0
                 )
@@ -240,6 +246,7 @@ def is_duplicate(new_title):
         new_words = set([w.lower() for w in new_title.split() if len(w) > 3])
         if not new_words: return False
         for (old_title,) in posted_titles:
+            if not old_title: continue
             old_words = set([w.lower() for w in old_title.split() if len(w) > 3])
             if not old_words: continue
             common_words = new_words.intersection(old_words)
@@ -249,113 +256,5 @@ def is_duplicate(new_title):
     except:
         return False
 
-def post_to_vk(source, title, summary, link, image_url, tag):
-    global LAST_VK_POST_TIME
-    if not VK_TOKEN or not can_post_to_vk():
-        return False
-    try:
-        vk_text = f"⚽️ {title}\n\n⚡️ {summary}\n\nЧитать полностью: {link}\n\n{tag}"
-        params = {"owner_id": f"-{VK_GROUP_ID}", "from_group": 1, "message": vk_text, "access_token": VK_TOKEN, "v": "5.131"}
-        if image_url and check_image_accessible(image_url):
-            attachment = upload_photo_to_vk(image_url)
-            params["attachments"] = attachment if attachment else link
-        else:
-            params["attachments"] = link
-        response = requests.post("https://api.vk.com/method/wall.post", data=params, timeout=5)
-        if "error" in response.json(): return False
-        increment_vk_counter()
-        LAST_VK_POST_TIME = time.time()
-        return True
-    except:
-        return False
-
-def parse_and_queue():
-    logger.info("🔄 Сканирование источников...")
-    translator = GoogleTranslator(source='auto', target='ru')
-    new_count = 0
-    with db_lock:
-        conn = get_db_connection()
-        cursor = conn.cursor()
-        for source_name, url in RSS_FEEDS.items():
-            try:
-                response = requests.get(url, timeout=10, headers={"User-Agent": "Mozilla/5.0"})
-                if response.status_code != 200: continue
-                feed = feedparser.parse(response.content)
-                for entry in reversed(feed.entries[:4]):
-                    link = entry.get('link', '')
-                    if not link: continue
-                    parsed_date = entry.get('published_parsed') or entry.get('updated_parsed')
-                    if parsed_date:
-                        try:
-                            entry_dt = datetime.fromtimestamp(time.mktime(parsed_date))
-                            if datetime.now() - entry_dt > timedelta(days=1): continue
-                        except: pass
-                    cursor.execute("SELECT 1 FROM posted_news WHERE url = ?", (link,))
-                    if cursor.fetchone(): continue
-                    cursor.execute("SELECT 1 FROM queue WHERE link = ?", (link,))
-                    if cursor.fetchone(): continue
-                    title = entry.get('title', 'Без заголовка')
-                    summary = entry.get('summary', entry.get('description', ''))
-                    if "<" in summary: summary = re.sub('<[^<]+?>', '', summary)
-                    summary = summary.replace("Читать дальше →", "").replace("Читать дальше", "").strip()
-                    
-                    if source_name in FOREIGN_SOURCES:
-                        try:
-                            title = translator.translate(title)
-                            if summary: summary = translator.translate(summary)
-                        except:
-                            continue
-                    
-                    if len(summary) > 250: summary = summary[:250].rsplit(' ', 1)[0] + "..."
-                    image_url = extract_image_from_entry(entry)
-                    tag = get_hashtag(title, summary)
-                    try:
-                        cursor.execute("INSERT INTO queue (source, title, summary, link, tag, image_url) VALUES (?, ?, ?, ?, ?, ?)", (source_name, title, summary, link, tag, image_url))
-                        conn.commit()
-                        new_count += 1
-                    except: pass
-            except: pass
-        conn.close()
-
-def publish_from_queue():
-    with db_lock:
-        conn = get_db_connection()
-        cursor = conn.cursor()
-        while True:
-            cursor.execute("SELECT id, source, title, summary, link, tag, image_url FROM queue ORDER BY RANDOM() LIMIT 1")
-            row = cursor.fetchone()
-            if not row: break
-            q_id, source, title, summary, link, tag, image_url = row
-            if is_duplicate(title) or not image_url or not check_image_accessible(image_url):
-                cursor.execute("DELETE FROM queue WHERE id = ?", (q_id,))
-                conn.commit()
-                continue
-            clean_title = title.replace("<", "&lt;").replace(">", "&gt;")
-            clean_summary = summary.replace("<", "&lt;").replace(">", "&gt;")
-            post_text = f"⚽️ <b>{clean_title}</b>\n\n⚡️ {clean_summary} — <i><a href='{link}'>{source}</a></i>\n\n⚡️ Подписывайся на <a href='https://t.me/onetime_foot'>Ван-Тайм</a>!\n\n{tag}"
-            try:
-                bot.send_photo(CHANNEL_ID, image_url, caption=post_text, parse_mode="HTML")
-                post_to_vk(source, title, summary, link, image_url, tag)
-                cursor.execute("INSERT INTO posted_news (url, title, posted_to_vk) VALUES (?, ?, ?)", (link, title, 1))
-                cursor.execute("DELETE FROM queue WHERE id = ?", (q_id,))
-                conn.commit()
-                break
-            except:
-                cursor.execute("DELETE FROM queue WHERE id = ?", (q_id,))
-                conn.commit()
-                continue
-        conn.close()
-
-def main():
-    init_db()
-    while True:
-        try:
-            parse_and_queue()
-            publish_from_queue()
-            time.sleep(TG_INTERVAL)
-        except:
-            time.sleep(10)
-
-if __name__ == "__main__":
-    main()
+def
     
