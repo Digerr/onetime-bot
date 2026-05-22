@@ -44,7 +44,6 @@ MOCK_SCORERS = {
 }
 
 def init_db():
-    # timeout=10 защищает базу данных от блокировок при одновременной записи новостей и чтении
     conn = sqlite3.connect(DB_NAME, timeout=10)
     cursor = conn.cursor()
     cursor.execute("""CREATE TABLE IF NOT EXISTS posted_news (
@@ -67,6 +66,7 @@ def get_news():
     try:
         conn = sqlite3.connect(DB_NAME, timeout=10)
         cursor = conn.cursor()
+        # Вытаскиваем абсолютно все новости без фильтрации по конкретным тегам
         cursor.execute("SELECT url, title, description, source, tag, image_url, published FROM posted_news ORDER BY id DESC LIMIT 40")
         rows = cursor.fetchall()
         conn.close()
@@ -75,15 +75,20 @@ def get_news():
         for r in rows:
             news_id = str(abs(hash(r[0])))
             news.append({
-                "id": news_id, "title": r[1], "desc": r[2] or "", "source": r[3] or "ВАН-ТАЙМ",
-                "tag": r[4] or "#Футбол", "image": r[5] or "https://images.unsplash.com/photo-1508098682722-e99c43a406b2",
-                "time": r[6].split()[1][:5] if r[6] and " " in r[6] else "Свежая", "likes": 0, "dislikes": 0
+                "id": news_id, 
+                "title": r[1], 
+                "desc": r[2] or "", 
+                "source": r[3] or "ВАН-ТАЙМ",
+                "tag": r[4] or "#Футбол", 
+                "image": r[5] or "https://images.unsplash.com/photo-1508098682722-e99c43a406b2",
+                "time": r[6].split()[1][:5] if r[6] and " " in r[6] else "Свежая", 
+                "likes": 0, 
+                "dislikes": 0
             })
         return json.dumps(news, ensure_ascii=False)
     except:
         return json.dumps([])
 
-# --- АВТОНОМНЫЙ И СТАБИЛЬНЫЙ ИСТОЧНИК МАТЧЕЙ ---
 @route('/api/matches')
 def get_all_matches():
     response.content_type = 'application/json; charset=utf-8'
@@ -98,7 +103,6 @@ def get_all_matches():
 @route('/api/matches/live')
 def get_only_live_matches():
     response.content_type = 'application/json; charset=utf-8'
-    # Отдаем пустой список, так как активных LIVE-игр прямо сейчас нет
     return json.dumps([], ensure_ascii=False)
 
 @route('/api/tables/<code_lig>')
@@ -135,17 +139,13 @@ def server_static(filename):
 if __name__ == "__main__":
     init_db()
     
-    # ЗАПУСКАЕМ ТВОЕГО БОТА ДЛЯ АВТОПОСТИНГА (ВК/ТГ) В ФОНЕ RAILWAY
+    # Автозапуск твоего новостного бота в параллельном потоке
     try:
         def start_bot():
-            print("Попытка запустить бота football_final.py...")
             subprocess.Popen(["python", "football_final.py"])
-        
         threading.Thread(target=start_bot, daemon=True).start()
-        print("Поток автозапуска бота успешно инициирован!")
     except Exception as e:
-        print("Критическая ошибка при запуске подпроцесса бота:", e)
+        print("Ошибка запуска бота:", e)
         
-    # СТАРТУЕМ СЕРВЕР САЙТА ВАН-ТАЙМ
     run(host='0.0.0.0', port=int(os.environ.get("PORT", 8080)))
     
