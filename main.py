@@ -6,20 +6,19 @@ import json
 import requests
 import time
 from bottle import route, run, static_file, response, request
+from bs4 import BeautifulSoup
 
 DB_NAME = "bot_v25.db"
 CACHE = {}
 
-# Словарь для конвертации кодов лиг в ID турниров на спортивных порталах
-LEAGUE_PARSER_MAP = {
-    "PL": "england",     # АПЛ
-    "PD": "spain",       # Ла Лига
-    "SA": "italy",       # Серия А
-    "BL1": "germany",    # Бундеслига
-    "FL1": "france",     # Лига 1
-    "RPL": "russia",     # РПЛ (Добавили нашу родную лигу!)
-    "CL": "champions-league", 
-    "EL": "europa-league"
+# Маппинг лиг для Sports.ru
+SPORTS_LEAGUE_MAP = {
+    "RPL": "rpl",
+    "PL": "epl",
+    "PD": "la-liga",
+    "SA": "seria-a",
+    "BL1": "bundesliga",
+    "FL1": "ligue-1"
 }
 
 def init_db():
@@ -67,73 +66,75 @@ def get_news():
     except:
         return json.dumps([])
 
-# --- УМНЫЙ ПАРСЕР МАТЧЕЙ И ЛАЙВА ---
-def parse_live_and_schedule():
+# --- ПАРСЕР ЦЕНТРА МАТЧЕЙ С SPORTS.RU ---
+def parse_sports_matches():
     now = time.time()
-    # Кэшируем матчи на 30 секунд, чтобы сайт летал
-    if 'parsed_matches' in CACHE and now - CACHE['parsed_matches']['time'] < 30:
-        return CACHE['parsed_matches']['data']
+    if 'matches' in CACHE and now - CACHE['matches']['time'] < 40:
+        return CACHE['matches']['data']
 
     matches = []
     try:
-        # Тянем данные напрямую через открытый спортивный API-канал Спорт-Экспресса / Спортивных Хабов
-        url = "https://m.sport-express.ru/html/v3/match/live-json/"
-        headers = {"User-Agent": "Mozilla/5.0 (Linux; Android 10) AppleWebKit/537.36"}
-        res = requests.get(url, headers=headers, timeout=5)
+        url = "https://m.sports.ru/stat/football/center/"
+        headers = {"User-Agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 13_2_3 like Mac OS X) AppleWebKit/605.1.15"}
+        res = requests.get(url, headers=headers, timeout=7)
         
         if res.status_code == 200:
-            raw_data = res.json()
-            for item in raw_data.get("matches", []):
-                # Извлекаем чистые данные без мусора
-                home_team = item.get("home_team", "Команда А")
-                away_team = item.get("away_team", "Команда Б")
-                score_home = item.get("score_home", "-")
-                score_away = item.get("score_away", "-")
+            soup = BeautifulSoup(res.text, 'html.parser')
+            # Находим блоки матчей в мобильной версии
+            match_items = soup.find_all('div', class_='match-item')
+            
+            for item in match_items:
+                try:
+                    league = item.find_previous('div', class_='title-block').text.strip()
+                except:
+                    league = "Турнир"
+                    
+                teams = item.find_all('div', class_='team-name')
+                if len(teams) < 2: continue
+                home = teams[0].text.strip()
+                away = teams[1].text.strip()
                 
-                status_raw = item.get("status", "").lower()
+                try:
+                    score_box = item.find('div', class_='score').text.strip().replace('\n', '').replace(' ', '')
+                except:
+                    score_box = "- : -"
+                
+                status_box = item.find('div', class_='status')
+                status_text = status_box.text.strip().lower() if status_box else ""
+                
                 is_live = False
-                if "идет" in status_raw or "live" in status_raw or "тайм" in status_raw:
+                if "идёт" in status_text or "live" in status_text or "тайм" in status_text or "'" in status_text:
                     status = "🔴 LIVE"
                     is_live = True
-                elif "завершен" in status_raw or "кончено" in status_raw:
+                elif "завершен" in status_text or "финал" in status_text:
                     status = "✅ Завершен"
                 else:
-                    status = f"🕐 {item.get('time', 'Скоро')}"
+                    status = f"🕐 {status_text.upper() or 'Скоро'}"
 
                 matches.append({
-                    "home": home_team, "away": away_team,
-                    "home_img": f"https://m.sport-express.ru/img/teams/{item.get('home_id')}.png",
-                    "away_img": f"https://m.sport-express.ru/img/teams/{item.get('away_id')}.png",
-                    "score": f"{score_home} : {score_away}", "status": status, "is_live": is_live,
-                    "league": item.get("league_name", "Турнир"),
-                    "league_img": ""
+                    "home": home, "away": away, "home_img": "", "away_img": "",
+                    "score": score_box if ":" in score_box else f"{score_box[0]} : {score_box[1]}" if len(score_box)==2 else "0 : 0",
+                    "status": status, "is_live": is_live, "league": league
                 })
-    except:
-        pass
+    except Exception as e:
+        print("Ошибка матчей:", e)
 
-    # Если в парсере пусто (ночью), создаем фейк-листы, чтобы сайт не казался сломанным
-    if not matches:
-        matches = [{
-            "home": "Зенит", "away": "Спартак", "home_img": "", "away_img": "",
-            "score": "0 : 0", "status": "🕐 Ожидание туров", "is_live": False, "league": "Мир РПЛ", "league_img": ""
-        }]
-
-    CACHE['parsed_matches'] = {'data': matches, 'time': now}
+    CACHE['matches'] = {'data': matches, 'time': now}
     return matches
 
 @route('/api/matches')
 def get_all_matches():
     response.content_type = 'application/json; charset=utf-8'
-    return json.dumps(parse_live_and_schedule(), ensure_ascii=False)
+    return json.dumps(parse_sports_matches(), ensure_ascii=False)
 
 @route('/api/matches/live')
 def get_only_live_matches():
     response.content_type = 'application/json; charset=utf-8'
-    all_m = parse_live_and_schedule()
+    all_m = parse_sports_matches()
     live_m = [m for m in all_m if m["is_live"]]
     return json.dumps(live_m, ensure_ascii=False)
 
-# --- УМНЫЙ ПАРСЕР ТАБЛИЦ И БОМБАРДИРОВ ---
+# --- ПАРСЕР ТАБЛИЦ С SPORTS.RU ---
 @route('/api/tables/<code>')
 def get_table(code):
     response.content_type = 'application/json; charset=utf-8'
@@ -142,30 +143,41 @@ def get_table(code):
     if cache_key in CACHE and now - CACHE[cache_key]['time'] < 300:
         return json.dumps(CACHE[cache_key]['data'], ensure_ascii=False)
 
+    table_data = []
     try:
-        league_slug = LEAGUE_PARSER_MAP.get(code, "russia")
-        # Парсим таблицы с открытых веб-структур
-        url = f"https://se-api.sport-express.ru/v1/football/leagues/{league_slug}/table"
-        res = requests.get(url, timeout=5).json()
+        league_slug = SPORTS_LEAGUE_MAP.get(code, "rpl")
+        url = f"https://m.sports.ru/{league_slug}/table/"
+        headers = {"User-Agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 13_2_3 like Mac OS X)"}
+        res = requests.get(url, headers=headers, timeout=6)
         
-        table_data = []
-        for i, team in enumerate(res.get("rows", [])[:16]):
-            table_data.append({
-                "pos": i + 1,
-                "name": team.get("team_name"),
-                "crest": f"https://m.sport-express.ru/img/teams/{team.get('team_id')}.png",
-                "games": team.get("matches", 0),
-                "won": team.get("wins", 0),
-                "draw": team.get("draws", 0),
-                "lost": team.get("losses", 0),
-                "points": team.get("points", 0)
-            })
-        CACHE[cache_key] = {'data': table_data, 'time': now}
-        return json.dumps(table_data, ensure_ascii=False)
-    except:
-        # Если не спарсилось, отдаем заглушку, чтобы таблицы не висели пустыми
-        return json.dumps([{"pos": 1, "name": "Обновление таблицы...", "crest": "", "games": 0, "won": 0, "draw": 0, "lost": 0, "points": 0}], ensure_ascii=False)
+        if res.status_code == 200:
+            soup = BeautifulSoup(res.text, 'html.parser')
+            table = soup.find('table', class_='stat-table') or soup.find('table')
+            rows = table.find_all('tr')[1[:16]] if table else [] # берем топ-15 команд
+            
+            for row in rows:
+                cols = row.find_all('td')
+                if len(cols) < 4: continue
+                
+                pos = cols[0].text.strip().replace('.', '')
+                name = cols[1].text.strip()
+                games = cols[2].text.strip()
+                won = cols[3].text.strip()
+                draw = cols[4].text.strip()
+                lost = cols[5].text.strip()
+                points = cols[-1].text.strip()
+                
+                table_data.append({
+                    "pos": pos, "name": name, "crest": "",
+                    "games": games, "won": won, "draw": draw, "lost": lost, "points": points
+                })
+    except Exception as e:
+        print("Ошибка таблиц:", e)
+        
+    CACHE[cache_key] = {'data': table_data, 'time': now}
+    return json.dumps(table_data, ensure_ascii=False)
 
+# --- ПАРСЕР БОМБАРДИРОВ С SPORTS.RU ---
 @route('/api/scorers/<code>')
 def get_scorers(code):
     response.content_type = 'application/json; charset=utf-8'
@@ -174,23 +186,34 @@ def get_scorers(code):
     if cache_key in CACHE and now - CACHE[cache_key]['time'] < 300:
         return json.dumps(CACHE[cache_key]['data'], ensure_ascii=False)
 
+    scorers_data = []
     try:
-        league_slug = LEAGUE_PARSER_MAP.get(code, "russia")
-        url = f"https://se-api.sport-express.ru/v1/football/leagues/{league_slug}/bombardiers"
-        res = requests.get(url, timeout=5).json()
+        league_slug = SPORTS_LEAGUE_MAP.get(code, "rpl")
+        url = f"https://www.sports.ru/{league_slug}/top-scorers/"
+        headers = {"User-Agent": "Mozilla/5.0"}
+        res = requests.get(url, headers=headers, timeout=6)
         
-        scorers_data = []
-        for player in res.get("items", [])[:10]:
-            scorers_data.append({
-                "name": player.get("player_name"),
-                "team": player.get("team_name"),
-                "goals": player.get("goals", 0),
-                "assists": player.get("assists", 0)
-            })
-        CACHE[cache_key] = {'data': scorers_data, 'time': now}
-        return json.dumps(scorers_data, ensure_ascii=False)
-    except:
-        return json.dumps([{"name": "Загрузка игроков...", "team": "-", "goals": 0, "assists": 0}], ensure_ascii=False)
+        if res.status_code == 200:
+            soup = BeautifulSoup(res.text, 'html.parser')
+            table = soup.find('table', class_='stat-table')
+            if table:
+                rows = table.find_all('tr')[1:11]
+                for row in rows:
+                    cols = row.find_all('td')
+                    if len(cols) < 4: continue
+                    name = cols[1].text.strip().split('\n')[0]
+                    team = cols[2].text.strip()
+                    goals = cols[3].text.strip()
+                    assists = cols[4].text.strip() if len(cols) > 4 else "0"
+                    
+                    scorers_data.append({
+                        "name": name, "team": team, "goals": goals, "assists": assists
+                    })
+    except Exception as e:
+        print("Ошибка бомбардиров:", e)
+        
+    CACHE[cache_key] = {'data': scorers_data, 'time': now}
+    return json.dumps(scorers_data, ensure_ascii=False)
 
 @route('/api/reaction', method='POST')
 def handle_reaction():
