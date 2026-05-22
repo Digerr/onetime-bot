@@ -4,10 +4,14 @@ import threading
 import sqlite3
 import json
 import requests
+import time
 from bottle import route, run, static_file, response, request
 
 DB_NAME = "bot_v25.db"
 FOOTBALL_API_KEY = "c7c58272f8b84c73b73483d15a3a8b03"
+
+# Простой кэш в памяти, чтобы не ловить блокировки от API (лимит 10 запросов в минуту)
+CACHE = {}
 
 def init_db():
     conn = sqlite3.connect(DB_NAME)
@@ -28,14 +32,31 @@ def index():
 @route('/api/news')
 def get_news():
     response.content_type = 'application/json; charset=utf-8'
-    init_db()
     try:
         conn = sqlite3.connect(DB_NAME)
         cursor = conn.cursor()
-        cursor.execute("SELECT url,title,description,source,tag,image_url,published FROM posted_news ORDER BY id DESC LIMIT 50")
+        cursor.execute("SELECT url, title, description, source, tag, image_url, published FROM posted_news ORDER BY id DESC LIMIT 40")
         rows = cursor.fetchall()
         conn.close()
-        news = [{"id": str(abs(hash(r[0]))), "title": r[1], "desc": r[2] or "", "source": r[3], "tag": r[4] or "#Футбол", "image": r[5] or "https://images.unsplash.com/photo-1508098682722-e99c43a406b2", "time": r[6].split()[1][:5] if r[6] else "Свежая"} for r in rows]
+        
+        news = []
+        for r in rows:
+            news_id = str(abs(hash(r[0])))
+            # Проверим лайки из базы
+            conn_r = sqlite3.connect(DB_NAME)
+            cur_r = conn_r.cursor()
+            cur_r.execute("SELECT likes, dislikes FROM reactions WHERE news_id = ?", (news_id,))
+            react = cur_r.fetchone()
+            conn_r.close()
+            likes = react[0] if react else 0
+            dislikes = react[1] if react else 0
+            
+            news.append({
+                "id": news_id, "title": r[1], "desc": r[2] or "", "source": r[3] or "ВАН-ТАЙМ",
+                "tag": r[4] or "#Футбол", "image": r[5] or "https://images.unsplash.com/photo-1508098682722-e99c43a406b2",
+                "time": r[6].split()[1][:5] if r[6] and " " in r[6] else "Свежая",
+                "likes": likes, "dislikes": dislikes
+            })
         return json.dumps(news, ensure_ascii=False)
     except:
         return json.dumps([])
@@ -43,19 +64,37 @@ def get_news():
 @route('/api/matches')
 def get_matches():
     response.content_type = 'application/json; charset=utf-8'
+    now = time.time()
+    if 'matches' in CACHE and now - CACHE['matches']['time'] < 45:
+        return json.dumps(CACHE['matches']['data'], ensure_ascii=False)
+
     try:
         headers = {"X-Auth-Token": FOOTBALL_API_KEY}
-        res = requests.get("https://api.football-data.org/v4/matches?status=LIVE,IN_PLAY,PAUSED,FINISHED&limit=20", headers=headers, timeout=8)
-        data = res.json()
+        # Запрашиваем матчи без жестких фильтров статуса, чтобы бесплатный тариф не выдавал ошибку 400
+        res = requests.get("https://api.football-data.org/v4/matches", headers=headers, timeout=8)
         matches = []
-        for m in data.get("matches", []):
-            home = m["homeTeam"]["name"]
-            away = m["awayTeam"]["name"]
-            home_img = m["homeTeam"].get("crest", "")
-            away_img = m["awayTeam"].get("crest", "")
-            score = f"{m['score']['fullTime']['home'] or '-'} : {m['score']['fullTime']['away'] or '-'}"
-            status = "🔴 LIVE" if m["status"] in ("IN_PLAY", "PAUSED") else "✅ Завершён" if m["status"] == "FINISHED" else "🕐 Скоро"
-            matches.append({"home": home, "away": away, "home_img": home_img, "away_img": away_img, "score": score, "status": status, "league": m["competition"]["name"]})
+        if res.status_code == 200:
+            data = res.json()
+            for m in data.get("matches", [])[:30]:
+                home = m["homeTeam"]["name"]
+                away = m["awayTeam"]["name"]
+                home_img = m["homeTeam"].get("crest", "")
+                away_img = m["awayTeam"].get("crest", "")
+                
+                h_score = m['score']['fullTime']['home'] if m['score']['fullTime']['home'] is not None else '-'
+                a_score = m['score']['fullTime']['away'] if m['score']['fullTime']['away'] is not None else '-'
+                
+                status_raw = m["status"]
+                if status_raw in ("IN_PLAY", "LIVE"): status = "🔴 LIVE"
+                elif status_raw == "PAUSED": status = "⏸️ Перерыв"
+                elif status_raw == "FINISHED": status = "✅ Завершен"
+                else: status = f"🕐 {m['utcDate'].split('T')[1][:5]}"
+                
+                matches.append({
+                    "home": home, "away": away, "home_img": home_img, "away_img": away_img,
+                    "score": f"{h_score} : {a_score}", "status": status, "league": m["competition"]["name"], "league_img": m["competition"].get("emblem", "")
+                })
+        CACHE['matches'] = {'data': matches, 'time': now}
         return json.dumps(matches, ensure_ascii=False)
     except:
         return json.dumps([])
@@ -63,24 +102,52 @@ def get_matches():
 @route('/api/tables/<code>')
 def get_table(code):
     response.content_type = 'application/json; charset=utf-8'
+    now = time.time()
+    cache_key = f"table_{code}"
+    if cache_key in CACHE and now - CACHE[cache_key]['time'] < 300:
+        return json.dumps(CACHE[cache_key]['data'], ensure_ascii=False)
+
     try:
-        league_ids = {"PL": 2021, "PD": 2014, "SA": 2019, "BL1": 2002, "FL1": 2015}
-        lid = league_ids.get(code, 2021)
-        res = requests.get(f"https://api.football-data.org/v4/competitions/{lid}/standings", headers={"X-Auth-Token": FOOTBALL_API_KEY}, timeout=8)
-        data = res.json()
-        return json.dumps([{"pos": t["position"], "name": t["team"]["name"], "points": t["points"]} for t in data["standings"][0]["table"][:12]], ensure_ascii=False)
+        league_ids = {"PL": "PL", "PD": "PD", "SA": "SA", "BL1": "BL1", "FL1": "FL1"}
+        l_code = league_ids.get(code, "PL")
+        
+        res = requests.get(f"https://api.football-data.org/v4/competitions/{l_code}/standings", headers={"X-Auth-Token": FOOTBALL_API_KEY}, timeout=8)
+        table_data = []
+        if res.status_code == 200:
+            data = res.json()
+            for t in data["standings"][0]["table"][:15]:
+                table_data.append({
+                    "pos": t["position"], "name": t["team"]["name"], "crest": t["team"].get("crest", ""),
+                    "games": t["playedGames"], "won": t["won"], "draw": t["draw"], "lost": t["lost"], "points": t["points"]
+                })
+        CACHE[cache_key] = {'data': table_data, 'time': now}
+        return json.dumps(table_data, ensure_ascii=False)
     except:
         return json.dumps([])
 
 @route('/api/scorers/<code>')
 def get_scorers(code):
     response.content_type = 'application/json; charset=utf-8'
+    now = time.time()
+    cache_key = f"scorers_{code}"
+    if cache_key in CACHE and now - CACHE[cache_key]['time'] < 300:
+        return json.dumps(CACHE[cache_key]['data'], ensure_ascii=False)
+
     try:
-        league_ids = {"PL": 2021, "PD": 2014, "SA": 2019, "BL1": 2002, "FL1": 2015}
-        lid = league_ids.get(code, 2021)
-        res = requests.get(f"https://api.football-data.org/v4/competitions/{lid}/scorers?limit=10", headers={"X-Auth-Token": FOOTBALL_API_KEY}, timeout=8)
-        data = res.json()
-        return json.dumps([{"name": s["player"]["name"], "team": s["team"]["name"], "goals": s.get("goals",0), "assists": s.get("assists",0) or 0} for s in data.get("scorers",[])], ensure_ascii=False)
+        league_ids = {"PL": "PL", "PD": "PD", "SA": "SA", "BL1": "BL1", "FL1": "FL1"}
+        l_code = league_ids.get(code, "PL")
+        
+        res = requests.get(f"https://api.football-data.org/v4/competitions/{l_code}/scorers", headers={"X-Auth-Token": FOOTBALL_API_KEY}, timeout=8)
+        scorers_data = []
+        if res.status_code == 200:
+            data = res.json()
+            for s in data.get("scorers", [])[:10]:
+                scorers_data.append({
+                    "name": s["player"]["name"], "team": s["team"]["name"],
+                    "goals": s.get("goals", 0), "assists": s.get("assists", 0) or 0
+                })
+        CACHE[cache_key] = {'data': scorers_data, 'time': now}
+        return json.dumps(scorers_data, ensure_ascii=False)
     except:
         return json.dumps([])
 
