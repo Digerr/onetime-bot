@@ -11,8 +11,28 @@ load_dotenv()
 DB_NAME = "bot_v25.db"
 FOOTBALL_API_KEY = os.getenv("FOOTBALL_API_KEY", "")
 
+def init_db():
+    conn = sqlite3.connect(DB_NAME)
+    cursor = conn.cursor()
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS posted_news (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            url TEXT UNIQUE,
+            title TEXT,
+            description TEXT,
+            source TEXT,
+            tag TEXT,
+            image_url TEXT,
+            published TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            posted_to_vk INTEGER DEFAULT 0
+        )
+    """)
+    conn.commit()
+    conn.close()
+
 @route('/')
 def index():
+    init_db()  # Создаём таблицы, если их нет
     try:
         conn = sqlite3.connect(DB_NAME)
         cursor = conn.cursor()
@@ -35,8 +55,11 @@ def index():
     except Exception as e:
         return f"Ошибка: {e}"
 
+# ... (остальной код /api/news, /api/matches и т.д. оставь как в прошлом сообщении)
+
 @route('/api/news')
 def get_news():
+    init_db()
     response.content_type = 'application/json; charset=utf-8'
     try:
         conn = sqlite3.connect(DB_NAME)
