@@ -28,7 +28,7 @@
         .tab-content.active { display: block; }
         @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
 
-        /* Поиск и фильтры (Горизонтальный свайп) */
+        /* Поиск и фильтры */
         .search-input { width: 100%; background: var(--card-bg); border: 1px solid var(--border-color); color: var(--text-color); padding: 14px 20px; border-radius: 12px; font-size: 15px; outline: none; margin-bottom: 15px; }
         
         .chips-wrapper { overflow-x: auto; white-space: nowrap; padding-bottom: 10px; margin-bottom: 15px; scrollbar-width: none; }
@@ -41,7 +41,6 @@
         .card { background: var(--card-bg); border-radius: 16px; overflow: hidden; border: 1px solid var(--border-color); position: relative; }
         .card.hidden { display: none; }
         
-        /* Смарт-карточка: первая новость большая, остальные компактные */
         .card:first-child .card-img { height: 250px; }
         .card-img { width: 100%; height: 180px; object-fit: cover; }
         
@@ -77,13 +76,13 @@
         .team-cell { display: flex; align-items: center; gap: 10px; font-weight: 600; }
         .t-logo { width: 22px; height: 22px; object-fit: contain; }
 
-        /* Скелетная загрузка (Skeleton Animation) */
+        /* Скелетная загрузка */
         .skeleton { background: linear-gradient(90deg, var(--card-bg) 25%, var(--border-color) 50%, var(--card-bg) 75%); background-size: 200% 100%; animation: shimmer 1.5s infinite; border-radius: 8px; }
         @keyframes shimmer { 0% { background-position: 200% 0; } 100% { background-position: -200% 0; } }
         .sk-match { height: 120px; border-radius: 16px; margin-bottom: 12px; }
         .sk-row { height: 40px; margin-bottom: 10px; }
 
-        /* Нижнее меню (Glassmorphism) */
+        /* Нижнее меню */
         .bottom-nav { position: fixed; bottom: 0; left: 0; width: 100%; background: var(--bottom-nav-bg); backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px); border-top: 1px solid var(--glass-border); display: flex; justify-content: space-around; padding: 10px 0 calc(10px + env(safe-area-inset-bottom)); z-index: 1000; }
         .b-nav-item { display: flex; flex-direction: column; align-items: center; gap: 4px; color: var(--text-muted); background: none; border: none; cursor: pointer; font-size: 10px; font-weight: 600; flex: 1; }
         .b-nav-icon { font-size: 22px; transition: 0.2s transform; }
@@ -207,25 +206,40 @@
         let savedBookmarks = JSON.parse(localStorage.getItem('bookmarks')) || [];
 
         function showToast(msg) {
-            let t = document.getElementById("toast"); t.innerText = msg; t.className = "show";
+            let t = document.getElementById("toast");
+            t.innerText = msg;
+            t.className = "show";
             setTimeout(() => { t.className = t.className.replace("show", ""); }, 2000);
         }
 
         function toggleBookmark(newsId, btn) {
             let idx = savedBookmarks.indexOf(newsId);
-            if (idx > -1) { savedBookmarks.splice(idx, 1); btn.classList.remove('saved'); btn.innerText = '🔖'; }
-            else { savedBookmarks.push(newsId); btn.classList.add('saved'); btn.innerText = '❤️'; showToast("Сохранено!"); }
+            if (idx > -1) { 
+                savedBookmarks.splice(idx, 1); 
+                btn.classList.remove('saved'); 
+                btn.innerText = '🔖'; 
+            } else { 
+                savedBookmarks.push(newsId); 
+                btn.classList.add('saved'); 
+                btn.innerText = '❤️'; 
+                showToast("Сохранено!"); 
+            }
             localStorage.setItem('bookmarks', JSON.stringify(savedBookmarks));
             renderFavs();
         }
 
         function renderFavs() {
-            let container = document.getElementById('favs-container'); container.innerHTML = "";
-            if(savedBookmarks.length === 0) { container.innerHTML = "<div style='color:var(--text-muted); padding: 20px 0;'>Тут пока пусто. Сохраняйте новости, чтобы прочитать их позже.</div>"; return; }
+            let container = document.getElementById('favs-container'); 
+            container.innerHTML = "";
+            if(savedBookmarks.length === 0) { 
+                container.innerHTML = "<div style='color:var(--text-muted); padding: 20px 0; text-align:center;'>Тут пока пусто. Сохраняйте новости, чтобы прочитать их позже.</div>"; 
+                return; 
+            }
             savedBookmarks.forEach(id => {
-                let orig = document.getElementById(`news-${id}`);
+                let orig = document.getElementById('news-' + id);
                 if(orig) {
-                    let clone = orig.cloneNode(true); clone.classList.remove('hidden');
+                    let clone = orig.cloneNode(true); 
+                    clone.classList.remove('hidden');
                     clone.querySelector('.bookmark-btn').onclick = function() { toggleBookmark(id, this); };
                     container.appendChild(clone);
                 }
@@ -233,8 +247,8 @@
         }
 
         function getSkeletonHTML(type) {
-            if(type==='match') return `<div class="skeleton sk-match"></div><div class="skeleton sk-match"></div><div class="skeleton sk-match"></div>`;
-            return `<tr><td colspan="7"><div class="skeleton sk-row"></div><div class="skeleton sk-row"></div><div class="skeleton sk-row"></div><div class="skeleton sk-row"></div></td></tr>`;
+            if(type==='match') return '<div class="skeleton sk-match"></div><div class="skeleton sk-match"></div><div class="skeleton sk-match"></div>';
+            return '<tr><td colspan="7"><div class="skeleton sk-row"></div><div class="skeleton sk-row"></div><div class="skeleton sk-row"></div><div class="skeleton sk-row"></div></td></tr>';
         }
 
         async function loadMatchesData() {
@@ -244,15 +258,15 @@
                 let html = res.map(m => `
                     <div class="match-card">
                         <div class="match-header">
-                            <div class="league-info">${m.league_img ? `<img src="${m.league_img}" class="league-logo">` : ''} ${m.league}</div>
+                            <div class="league-info">${m.league_img ? '<img src="' + m.league_img + '" class="league-logo">' : ''} ${m.league}</div>
                             <div class="status-badge ${m.status.includes('LIVE') ? 'live' : ''}">${m.status}</div>
                         </div>
                         <div class="match-teams">
-                            <div class="team-block">${m.home_img ? `<img src="${m.home_img}" class="team-logo">` : ''} <span>${m.home}</span></div>
+                            <div class="team-block">${m.home_img ? '<img src="' + m.home_img + '" class="team-logo">' : ''} <span>${m.home}</span></div>
                             <div class="match-score">${m.score}</div>
-                            <div class="team-block">${m.away_img ? `<img src="${m.away_img}" class="team-logo">` : ''} <span>${m.away}</span></div>
+                            <div class="team-block">${m.away_img ? '<img src="' + m.away_img + '" class="team-logo">' : ''} <span>${m.away}</span></div>
                         </div>
-                        ${m.scorers ? `<div class="goal-scorers">${m.scorers}</div>` : ''}
+                        ${m.scorers ? '<div class="goal-scorers">' + m.scorers + '</div>' : ''}
                     </div>
                 `).join('');
                 document.getElementById('matches-load-box').innerHTML = html || '<div style="text-align:center;padding:20px;">Нет данных</div>';
@@ -260,14 +274,17 @@
         }
 
         async function loadTableData(code, btn) {
-            if(btn) { document.querySelectorAll('#tab-tables .filter-btn').forEach(b => b.classList.remove('active')); btn.classList.add('active'); }
+            if(btn) { 
+                document.querySelectorAll('#tab-tables .filter-btn').forEach(b => b.classList.remove('active')); 
+                btn.classList.add('active'); 
+            }
             document.getElementById('table-body-async').innerHTML = getSkeletonHTML('table');
             try {
                 let res = await (await fetch('/api/tables/' + code)).json();
                 document.getElementById('table-body-async').innerHTML = res.map(t => `
                     <tr>
                         <td style="font-weight:700;color:var(--text-muted);">${t.pos}</td>
-                        <td><div class="team-cell">${t.crest ? `<img src="${t.crest}" class="t-logo">` : ''} ${t.name}</div></td>
+                        <td><div class="team-cell">${t.crest ? '<img src="' + t.crest + '" class="t-logo">' : ''} ${t.name}</div></td>
                         <td style="text-align:center;color:var(--text-muted);">${t.games}</td>
                         <td style="text-align:center;">${t.won}</td>
                         <td style="text-align:center;">${t.draw}</td>
@@ -279,7 +296,10 @@
         }
 
         async function loadScorersData(code, btn) {
-            if(btn) { document.querySelectorAll('#tab-scorers .filter-btn').forEach(b => b.classList.remove('active')); btn.classList.add('active'); }
+            if(btn) { 
+                document.querySelectorAll('#tab-scorers .filter-btn').forEach(b => b.classList.remove('active')); 
+                btn.classList.add('active'); 
+            }
             document.getElementById('scorers-body-async').innerHTML = getSkeletonHTML('table');
             try {
                 let res = await (await fetch('/api/scorers/' + code)).json();
@@ -299,7 +319,4 @@
             document.getElementById(id).classList.add('active');
             document.querySelectorAll('.b-nav-item').forEach(b => b.classList.remove('active'));
             btn.classList.add('active');
-            window.scrollTo({ top: 0, behavior: 'smooth' }); // Возврат наверх при смене таба
-            
-            if(id === 'tab-matches' && document.getElementById('matches-load-box').innerHTML.includes('skeleton')) loadMatchesData();
-            if(id === 'tab-t
+            window.scrollTo(
