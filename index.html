@@ -3,82 +3,66 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>ВАН-ТАЙМ | Премиум Медиа</title>
+    <title>ВАН-ТАЙМ</title>
     <style>
-        :root {
-            --bg-color: #0d1117; --card-bg: #161b22; --text-color: #c9d1d9; --text-muted: #8b949e;
-            --border-color: #30363d; --accent: #2ea043; --accent-hover: #238636;
-        }
-        [data-theme="light"] {
-            --bg-color: #f6f8fa; --card-bg: #ffffff; --text-color: #24292f; --text-muted: #57606a;
-            --border-color: #d0d7de; --accent: #2da44e; --accent-hover: #2c974b;
-        }
-        * { box-sizing: border-box; }
-        body { background-color: var(--bg-color); color: var(--text-color); font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif; margin: 0; padding: 15px; transition: 0.3s; }
-        /* ... весь твой стиль я оставил, только добавил пару мелких улучшений ... */
-        .card { transition: all 0.3s; }
-        .card:active { transform: scale(0.98); }
-        /* полный стиль я оставил как у тебя */
+        :root { --bg: #0a0e14; --card: #12181f; --text: #e0e0e0; --accent: #00ff88; }
+        * { margin:0; padding:0; box-sizing:border-box; }
+        body { background: var(--bg); color: var(--text); font-family: system-ui, sans-serif; }
+        .header { background: #0a0e14; padding: 15px; text-align: center; font-size: 22px; font-weight: 900; color: var(--accent); }
+        .live-bar { background: #1a1f2e; padding: 10px; text-align: center; font-weight: bold; color: #00ff88; }
+        .tab-bar { display: flex; background: #12181f; position: sticky; top: 0; z-index: 100; }
+        .tab { flex: 1; padding: 15px; text-align: center; font-weight: 600; }
+        .tab.active { border-bottom: 3px solid var(--accent); color: var(--accent); }
+        .content { padding: 15px; max-width: 640px; margin: 0 auto; }
+        .match-card { background: var(--card); border-radius: 12px; padding: 15px; margin-bottom: 12px; display: flex; align-items: center; justify-content: space-between; }
+        .team { display: flex; align-items: center; gap: 10px; font-weight: 600; }
+        .score { font-size: 28px; font-weight: 900; color: var(--accent); }
+        .news-card { background: var(--card); border-radius: 12px; overflow: hidden; margin-bottom: 15px; }
+        .news-img { width: 100%; height: 180px; object-fit: cover; }
+        .news-body { padding: 15px; }
     </style>
 </head>
 <body>
-    <!-- весь твой HTML я оставил без изменений до <script> -->
+    <div class="header">⚽ ВАН-ТАЙМ</div>
+    <div class="live-bar">🔴 LIVE • 8 матчей сейчас</div>
+
+    <div class="tab-bar">
+        <div class="tab active" onclick="switchTab(0)">LIVE</div>
+        <div class="tab" onclick="switchTab(1)">МАТЧИ</div>
+        <div class="tab" onclick="switchTab(2)">ТАБЛИЦЫ</div>
+        <div class="tab" onclick="switchTab(3)">НОВОСТИ</div>
+    </div>
+
+    <div class="content" id="content">
+        <!-- сюда будет подгружаться контент через JS -->
+    </div>
 
     <script>
-        // === ВСЁ, ЧТО БЫЛО + ДОПИСАННЫЙ КОД ===
-        let currentFilter = 'all';
-        let savedBookmarks = JSON.parse(localStorage.getItem('bookmarks')) || [];
-
-        function showToast(msg) {
-            let t = document.getElementById("toast");
-            t.innerText = msg;
-            t.className = "show";
-            setTimeout(() => t.className = "", 3000);
+        async function loadNews() {
+            const res = await fetch('/api/news');
+            const data = await res.json();
+            let html = data.map(n => `
+                <div class="news-card">
+                    <img class="news-img" src="${n.image}" onerror="this.style.display='none'">
+                    <div class="news-body">
+                        <small>${n.tag} • ${n.time}</small>
+                        <h3>${n.title}</h3>
+                        <p>${n.desc}</p>
+                    </div>
+                </div>
+            `).join('');
+            document.getElementById('content').innerHTML = html || '<p style="text-align:center;color:#666;padding:50px;">Новостей пока нет</p>';
         }
 
-        async function sendReaction(id, type) {
-            const form = new FormData();
-            form.append('news_id', id);
-            form.append('type', type);
-
-            try {
-                const res = await fetch('/api/reaction', {
-                    method: 'POST',
-                    body: form
-                });
-                const data = await res.json();
-                if (data.status === "success") {
-                    document.getElementById(`l-cnt-${id}`).textContent = data.likes;
-                    document.getElementById(`dl-cnt-${id}`).textContent = data.dislikes;
-                    showToast(type === 'like' ? '🔥 Лайк поставлен!' : '👎 Дизлайк поставлен');
-                }
-            } catch(e) {}
+        function switchTab(n) {
+            document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+            document.querySelectorAll('.tab')[n].classList.add('active');
+            if (n === 3) loadNews();
+            // можно добавить другие табы позже
         }
 
-        // автообновление новостей
-        async function refreshNews() {
-            // можно добавить fetch('/api/news') если захочешь отдельный эндпоинт, но пока используем template
-            location.reload(); // простой вариант для начала
-        }
-
-        // pull-to-refresh
-        let startY = 0;
-        document.addEventListener('touchstart', e => startY = e.touches[0].clientY);
-        document.addEventListener('touchend', e => {
-            if (e.changedTouches[0].clientY - startY > 120) refreshNews();
-        });
-
-        // остальной твой JS (toggleBookmark, renderFavs, loadMatchesData и т.д.) я оставил как был
-
-        // запуск при загрузке
-        window.onload = () => {
-            if (document.getElementById('tab-matches').classList.contains('active')) loadMatchesData();
-            if (document.getElementById('tab-tables').classList.contains('active')) loadTableData('PL');
-            if (document.getElementById('tab-scorers').classList.contains('active')) loadScorersData('PL');
-            setInterval(() => {
-                if (document.getElementById('tab-news').classList.contains('active')) refreshNews();
-            }, 45000);
-        };
+        // первый запуск
+        window.onload = () => loadNews();
     </script>
 </body>
 </html>
