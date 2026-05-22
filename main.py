@@ -2,36 +2,32 @@ import os
 import subprocess
 import threading
 import requests
-import re
 from bottle import route, run, template
 
 DB_NAME = "bot_v25.db"
 
 def get_today_matches():
-    """Безопасный сборщик расписания главных матчей дня для виджета"""
+    """Надежный сборщик реальных матчей на сегодня из открытого спортивного API"""
     matches = []
     try:
-        # Используем открытый RSS Чемпионата со списком матчей / трансляций дня
-        url = "https://www.championat.com/rss/live/football/"
+        # Запрашиваем данные о сегодняшних играх (используем стабильное открытое спортивное зеркало)
+        url = "https://www.scorebat.com/video-api/v3/"
         response = requests.get(url, timeout=5, headers={"User-Agent": "Mozilla/5.0"})
         if response.status_code == 200:
-            import feedparser
-            feed = feedparser.parse(response.content)
-            for entry in feed.entries[:8]: # Берем топ-8 главных игр на сегодня
-                title = entry.get('title', '')
+            data = response.json()
+            # Берем первые 8 матчей, которые идут прямо сейчас или запланированы
+            for item in data.get('response', [])[:8]:
+                title = item.get('title', '')
                 if " - " in title:
-                    # Убираем лишние слова, оставляем только Команда А - Команда Б
-                    clean_title = title.split(".")[0] if "." in title else title
-                    matches.append({"teams": clean_title})
+                    matches.append({"teams": title})
     except Exception:
         pass
     
-    # Если матчей нет или ошибка парсинга, покажем красивые заглушки топ-игр
+    # Если в межсезонье матчей совсем нет, покажем нейтральное расписание турниров
     if not matches:
         matches = [
-            {"teams": "Реал Мадрид - Барселона"},
-            {"teams": "Манчестер Сити - Ливерпуль"},
-            {"teams": "Зенит - Спартак"}
+            {"teams": "Матчи лиг появятся перед началом туров"},
+            {"teams": "Следите за обновлениями ВАН-ТАЙМ"}
         ]
     return matches
 
@@ -63,7 +59,7 @@ def index():
             "image": "https://images.unsplash.com/photo-1508098682722-e99c43a406b2?w=500"
         }]
 
-    # Загружаем матчи дня
+    # Загружаем только реальные матчи дня
     matches_today = get_today_matches()
 
     html_page = """
