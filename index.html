@@ -153,14 +153,20 @@
             try {
                 let res = await fetch('/api/matches/live');
                 let data = await res.json();
-                document.getElementById('live-count-badge').innerText = data.length;
-            } catch(e) {}
+                document.getElementById('live-count-badge').innerText = Array.isArray(data) ? data.length : 0;
+            } catch(e) {
+                document.getElementById('live-count-badge').innerText = 0;
+            }
         }
 
         async function loadNews() {
             try {
                 let res = await fetch('/api/news');
                 let data = await res.json();
+                if (!Array.isArray(data) || data.length === 0) {
+                    document.getElementById('news-container').innerHTML = '<div style="text-align:center;padding:40px;color:var(--text-muted);">Лента пуста. Добавьте новости через бота!</div>';
+                    return;
+                }
                 document.getElementById('news-container').innerHTML = data.map(n => `
                     <div class="card" data-tag="${n.tag}" id="news-${n.id}">
                         <img class="card-img" src="${n.image}" onerror="this.src='https://images.unsplash.com/photo-1508098682722-e99c43a406b2'">
@@ -180,7 +186,9 @@
                     </div>
                 `).join('');
                 liveSearch();
-            } catch(e) { document.getElementById('news-container').innerText = "Ошибка загрузки ленты."; }
+            } catch(e) { 
+                document.getElementById('news-container').innerHTML = '<div style="text-align:center;padding:40px;color:var(--text-muted);">Лента пуста. Добавьте новости через бота!</div>'; 
+            }
         }
 
         async function loadOnlyLiveMatches() {
@@ -188,6 +196,10 @@
             try {
                 let res = await fetch('/api/matches/live');
                 let data = await res.json();
+                if (!Array.isArray(data) || data.length === 0) {
+                    document.getElementById('matches-live-box').innerHTML = '<div style="text-align:center;padding:40px;color:var(--text-muted);">Прямо сейчас активных LIVE-матчей нет</div>';
+                    return;
+                }
                 document.getElementById('matches-live-box').innerHTML = data.map(m => `
                     <div class="match-card">
                         <div class="match-header">
@@ -200,8 +212,10 @@
                             <div class="team-block"><span>${m.away}</span></div>
                         </div>
                     </div>
-                `).join('') || '<div style="text-align:center;padding:40px;color:var(--text-muted);">Прямо сейчас активных матчей нет</div>';
-            } catch(e) {}
+                `).join('');
+            } catch(e) {
+                document.getElementById('matches-live-box').innerHTML = '<div style="text-align:center;padding:40px;color:var(--text-muted);">Прямо сейчас активных LIVE-матчей нет</div>';
+            }
         }
 
         async function loadScheduleMatches() {
@@ -209,6 +223,10 @@
             try {
                 let res = await fetch('/api/matches');
                 let data = await res.json();
+                if (!Array.isArray(data) || data.length === 0) {
+                    document.getElementById('matches-all-box').innerHTML = '<div style="text-align:center;padding:40px;color:var(--text-muted);">Матчей не найдено</div>';
+                    return;
+                }
                 document.getElementById('matches-all-box').innerHTML = data.map(m => `
                     <div class="match-card">
                         <div class="match-header">
@@ -221,8 +239,10 @@
                             <div class="team-block"><span>${m.away}</span></div>
                         </div>
                     </div>
-                `).join('') || '<div style="text-align:center;padding:40px;color:var(--text-muted);">Матчей не найдено</div>';
-            } catch(e) {}
+                `).join('');
+            } catch(e) {
+                document.getElementById('matches-all-box').innerHTML = '<div style="text-align:center;padding:40px;color:var(--text-muted);">Ошибка загрузки календаря</div>';
+            }
         }
 
         async function loadTableData(code, btn) {
@@ -238,7 +258,9 @@
                         <td>${t.games}</td><td>${t.won}</td><td>${t.draw}</td><td>${t.lost}</td><td style="font-weight:700;">${t.points}</td>
                     </tr>
                 `).join('');
-            } catch(e) {}
+            } catch(e) {
+                document.getElementById('table-body-async').innerHTML = '<tr><td colspan="7">Ошибка загрузки лиги</td></tr>';
+            }
         }
 
         async function loadScorersData(code, btn) {
@@ -254,7 +276,9 @@
                         <td style="font-weight:800;color:var(--accent);">${s.goals}</td><td>${s.assists}</td>
                     </tr>
                 `).join('');
-            } catch(e) {}
+            } catch(e) {
+                document.getElementById('scorers-body-async').innerHTML = '<tr><td colspan="4">Ошибка загрузки статистики игроков</td></tr>';
+            }
         }
 
         function switchAppTab(id, btn) {
@@ -292,17 +316,4 @@
                 let res = await (await fetch('/api/reaction', { method: 'POST', body: fd })).json();
                 if(res.status === 'success') {
                     document.getElementById('l-'+id).innerText = res.likes;
-                    document.getElementById('d-'+id).innerText = res.dislikes;
-                    showToast("Оценка сохранена!");
-                }
-            } catch(e) {}
-        }
-
-        window.addEventListener('DOMContentLoaded', () => { 
-            loadNews();
-            updateLiveBadge();
-            setInterval(updateLiveBadge, 15000);
-        });
-    </script>
-</body>
-</html>
+                    document.getElementById('d-'+id).innerText = res.dislikes
