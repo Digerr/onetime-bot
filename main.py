@@ -3,7 +3,6 @@ import subprocess
 import threading
 from bottle import route, run, template
 
-# Подключаем сайт к реальной базе бота
 DB_NAME = "bot_v25.db"
 
 @route('/')
@@ -12,21 +11,29 @@ def index():
     conn = sqlite3.connect(DB_NAME)
     cursor = conn.cursor()
     try:
-        # Достаем последние 30 опубликованных новостей из таблицы бота
-        cursor.execute("SELECT title, description, source FROM posted_news ORDER BY id DESC LIMIT 30")
+        # Теперь достаем еще и тег (tag) вместе с картинкой (image_url)
+        cursor.execute("SELECT title, description, source, tag, image_url FROM posted_news ORDER BY id DESC LIMIT 40")
         rows = cursor.fetchall()
     except sqlite3.OperationalError:
         rows = []
     conn.close()
     
-    # Фильтруем пустые строчки, если они попадутся
-    news_data = [{"title": r[0], "desc": r[1], "source": r[2]} for r in rows if r[0] and r[1]]
+    # Собираем данные, проверяя наличие полей
+    news_data = []
+    for r in rows:
+        if r[0] and r[1]:
+            # Если картинки нет, подставим красивую заглушку с футбольным мячом
+            img = r[4] if (len(r) > 4 and r[4]) else "https://images.unsplash.com/photo-1508098682722-e99c43a406b2?w=500"
+            tag = r[3] if (len(r) > 3 and r[3]) else "#Футбол"
+            news_data.append({"title": r[0], "desc": r[1], "source": r[2], "tag": tag, "image": img})
     
     if not news_data:
         news_data = [{
             "title": "Лента «ВАН-ТАЙМ» обновляется", 
-            "desc": "Бот прямо сейчас сканирует Sky Sports, Marca и другие источники. Свежие инсайды появятся с минуты на минуту!", 
-            "source": "Система"
+            "desc": "Бот собирает свежие футбольные инсайды. Загляните через пару минут!", 
+            "source": "Система",
+            "tag": "#Футбол",
+            "image": "https://images.unsplash.com/photo-1508098682722-e99c43a406b2?w=500"
         }]
 
     html_page = """
@@ -35,36 +42,83 @@ def index():
     <head>
         <meta charset="UTF-8">
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <title>ВАН-ТАЙМ | Футбольный агрегатор</title>
+        <title>ВАН-ТАЙМ | Футбольный портал</title>
         <style>
-            body { background-color: #121212; color: #ffffff; font-family: Arial, sans-serif; margin: 0; padding: 20px; }
-            .header { text-align: center; color: #2ecc71; font-size: 24px; font-weight: bold; margin-bottom: 25px; text-transform: uppercase; letter-spacing: 2px; }
-            .card { background-color: #1e1e1e; padding: 15px; border-radius: 8px; margin-bottom: 15px; border-left: 5px solid #2ecc71; box-shadow: 0 4px 6px rgba(0,0,0,0.3); }
-            .card-title { color: #2ecc71; font-size: 18px; font-weight: bold; margin-bottom: 8px; }
-            .card-desc { color: #b3b3b3; font-size: 14px; line-height: 1.4; margin-bottom: 8px; }
-            .card-source { color: #555; font-size: 11px; text-align: right; font-style: italic; }
-            .footer { text-align: center; color: #444; font-size: 12px; margin-top: 30px; }
+            body { background-color: #121212; color: #ffffff; font-family: 'Segoe UI', Arial, sans-serif; margin: 0; padding: 15px; }
+            .header { text-align: center; color: #2ecc71; font-size: 26px; font-weight: bold; margin: 15px 0; text-transform: uppercase; letter-spacing: 2px; }
+            
+            /* Панель фильтров */
+            .filter-panel { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; margin-bottom: 25px; }
+            .filter-btn { background-color: #1e1e1e; color: #b3b3b3; border: 1px solid #333; padding: 8px 14px; border-radius: 20px; cursor: pointer; font-size: 13px; font-weight: bold; transition: all 0.3s; }
+            .filter-btn:hover, .filter-btn.active { background-color: #2ecc71; color: #121212; border-color: #2ecc71; }
+            
+            /* Сетка карточек */
+            .news-container { display: flex; flex-direction: column; gap: 20px; max-width: 600px; margin: 0 auto; }
+            .card { background-color: #1e1e1e; border-radius: 12px; overflow: hidden; box-shadow: 0 4px 15px rgba(0,0,0,0.5); border-bottom: 4px solid #2ecc71; transition: transform 0.2s; }
+            .card.hidden { display: none; }
+            .card-img { width: 100%; height: 200px; object-fit: cover; }
+            .card-body { padding: 15px; }
+            .card-tag { display: inline-block; background-color: rgba(46, 204, 113, 0.1); color: #2ecc71; padding: 3px 8px; border-radius: 4px; font-size: 11px; font-weight: bold; margin-bottom: 10px; }
+            .card-title { color: #ffffff; font-size: 19px; font-weight: bold; margin: 0 0 10px 0; line-height: 1.3; }
+            .card-desc { color: #cccccc; font-size: 14px; line-height: 1.5; margin-bottom: 12px; }
+            .card-footer { display: flex; justify-content: space-between; color: #666; font-size: 12px; font-style: italic; border-top: 1px solid #2a2a2a; padding-top: 10px; }
+            
+            .footer { text-align: center; color: #444; font-size: 12px; margin-top: 40px; padding-bottom: 20px; }
         </style>
+        <script>
+            function filterNews(tag, button) {
+                // Меняем активную кнопку
+                let buttons = document.querySelectorAll('.filter-btn');
+                buttons.forEach(btn => btn.classList.remove('active'));
+                button.classList.add('active');
+                
+                # Фильтруем карточки
+                let cards = document.querySelectorAll('.card');
+                cards.forEach(card => {
+                    if (tag === 'all' || card.getAttribute('data-tag') === tag) {
+                        card.classList.remove('hidden');
+                    } else {
+                        card.classList.add('hidden');
+                    }
+                });
+            }
+        </script>
     </head>
     <body>
         <div class="header">⚽ ВАН-ТАЙМ</div>
         
-        % for item in news:
-            <div class="card">
-                <div class="card-title">{{item['title']}}</div>
-                <div class="card-desc">{{item['desc']}}</div>
-                <div class="card-source">Источник: {{item['source']}}</div>
-            </div>
-        % end
+        <div class="filter-panel">
+            <button class="filter-btn active" onclick="filterNews('all', this)">Все</button>
+            <button class="filter-btn" onclick="filterNews('#Трансферы', this)">Трансферы</button>
+            <button class="filter-btn" onclick="filterNews('#РПЛ', this)">РПЛ</button>
+            <button class="filter-btn" onclick="filterNews('#АПЛ', this)">АПЛ</button>
+            <button class="filter-btn" onclick="filterNews('#ЛаЛига', this)">Ла Лига</button>
+            <button class="filter-btn" onclick="filterNews('#ЛЧ', this)">Лига Чемпионов</button>
+        </div>
         
-        <div class="footer">Автоматический новостной агрегатор 2026</div>
+        <div class="news-container">
+            % for item in news:
+                <div class="card" data-tag="{{item['tag']}}">
+                    <img class="card-img" src="{{item['image']}}" alt="news-img" onerror="this.src='https://images.unsplash.com/photo-1508098682722-e99c43a406b2?w=500'">
+                    <div class="card-body">
+                        <span class="card-tag">{{item['tag']}}</span>
+                        <h2 class="card-title">{{item['title']}}</h2>
+                        <div class="card-desc">{{item['desc']}}</div>
+                        <div class="card-footer">
+                            <span>Источник: {{item['source']}}</span>
+                        </div>
+                    </div>
+                </div>
+            % end
+        </div>
+        
+        <div class="footer">ВАН-ТАЙМ Спортивный Медиа-Хаб 2026</div>
     </body>
     </html>
     """
     return template(html_page, news=news_data)
 
 def start_bot():
-    # Запускаем обновленный файл бота
     subprocess.Popen(["python", "football_final.py"])
 
 if __name__ == "__main__":
