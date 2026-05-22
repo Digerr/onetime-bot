@@ -24,8 +24,8 @@
         .tab-content { display: none; max-width: 600px; margin: 0 auto; }
         .tab-content.active { display: block; }
         .search-input { width: 100%; background: var(--card-bg); border: 1px solid var(--border-color); color: var(--text-color); padding: 12px 20px; border-radius: 25px; font-size: 14px; outline: none; margin-bottom: 15px; }
-        .filter-panel { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; margin-bottom: 20px; }
-        .filter-btn { background: var(--card-bg); color: var(--text-muted); border: 1px solid var(--border-color); padding: 6px 12px; border-radius: 15px; cursor: pointer; font-size: 12px; font-weight: bold; }
+        .filter-panel { display: flex; flex-wrap: wrap; gap: 6px; justify-content: center; margin-bottom: 15px; }
+        .filter-btn { background: var(--card-bg); color: var(--text-muted); border: 1px solid var(--border-color); padding: 6px 10px; border-radius: 12px; cursor: pointer; font-size: 11px; font-weight: bold; }
         .filter-btn.active { background: var(--accent); color: #fff; border-color: var(--accent); }
         .card { background: var(--card-bg); border-radius: 16px; overflow: hidden; border: 1px solid var(--border-color); margin-bottom: 20px; position: relative; }
         .card.hidden { display: none; }
@@ -116,12 +116,14 @@
             <button class="filter-btn" onclick="loadTableData('PD', this)">Ла Лига</button>
             <button class="filter-btn" onclick="loadTableData('SA', this)">Серия А</button>
             <button class="filter-btn" onclick="loadTableData('BL1', this)">Бундес</button>
+            <button class="filter-btn" onclick="loadTableData('FL1', this)">Лига 1</button>
+            <button class="filter-btn" onclick="loadTableData('PPL', this)">Португалия</button>
         </div>
         <div style="background: var(--card-bg); border-radius: 12px; padding: 10px; border: 1px solid var(--border-color);">
             <table class="pro-table">
                 <thead><tr><th>#</th><th style="text-align:left;">Клуб</th><th>И</th><th>В</th><th>Н</th><th>П</th><th>Мячи</th><th>О</th></tr></thead>
                 <tbody id="table-body-async">
-                    <tr><td colspan="8" style="text-align:center;padding:20px;color:var(--text-muted);">Выберите лигу выше</td></tr>
+                    <tr><td colspan="8" style="text-align:center;padding:20px;color:var(--text-muted);">Загрузка таблицы...</td></tr>
                 </tbody>
             </table>
         </div>
@@ -133,12 +135,14 @@
             <button class="filter-btn" onclick="loadScorersData('PD', this)">Ла Лига</button>
             <button class="filter-btn" onclick="loadScorersData('SA', this)">Серия А</button>
             <button class="filter-btn" onclick="loadScorersData('BL1', this)">Бундес</button>
+            <button class="filter-btn" onclick="loadScorersData('FL1', this)">Лига 1</button>
+            <button class="filter-btn" onclick="loadScorersData('PPL', this)">Португалия</button>
         </div>
         <div style="background: var(--card-bg); border-radius: 12px; padding: 10px; border: 1px solid var(--border-color);">
             <table class="pro-table">
                 <thead><tr><th style="text-align:left;">Игрок</th><th style="text-align:left;">Клуб</th><th>Голы</th><th>Пасы</th></tr></thead>
                 <tbody id="scorers-body-async">
-                    <tr><td colspan="4" style="text-align:center;padding:20px;color:var(--text-muted);">Выберите лигу выше</td></tr>
+                    <tr><td colspan="4" style="text-align:center;padding:20px;color:var(--text-muted);">Загрузка топ-страйкеров...</td></tr>
                 </tbody>
             </table>
         </div>
@@ -203,8 +207,13 @@
             if(btn) {
                 document.querySelectorAll('#tab-tables .filter-btn').forEach(b => b.classList.remove('active'));
                 btn.classList.add('active');
+            } else {
+                // Если кнопка не передана (при первом открытии вкладки), активируем кнопку АПЛ по умолчанию
+                document.querySelectorAll('#tab-tables .filter-btn').forEach(b => b.classList.remove('active'));
+                let firstBtn = document.querySelector('#tab-tables .filter-btn');
+                if(firstBtn) firstBtn.classList.add('active');
             }
-            document.getElementById('table-body-async').innerHTML = '<tr><td colspan="8" style="text-align:center;padding:20px;color:var(--text-muted);">Загрузка таблицы лиги...</td></tr>';
+            document.getElementById('table-body-async').innerHTML = '<tr><td colspan="8" style="text-align:center;padding:20px;color:var(--text-muted);">Синхронизация таблицы...</td></tr>';
             try {
                 let res = await (await fetch('/api/tables/' + code)).json();
                 document.getElementById('table-body-async').innerHTML = res.map(t => `
@@ -219,18 +228,24 @@
                         <td style="text-align:center;font-weight:bold;">${t.points}</td>
                     </tr>
                 `).join('');
-            } catch(e) {}
+            } catch(e) {
+                document.getElementById('table-body-async').innerHTML = '<tr><td colspan="8" style="text-align:center;padding:20px;color:#e74c3c;">Ошибка получения данных лиги</td></tr>';
+            }
         }
 
         async function loadScorersData(code, btn) {
             if(btn) {
                 document.querySelectorAll('#tab-scorers .filter-btn').forEach(b => b.classList.remove('active'));
                 btn.classList.add('active');
+            } else {
+                document.querySelectorAll('#tab-scorers .filter-btn').forEach(b => b.classList.remove('active'));
+                let firstBtn = document.querySelector('#tab-scorers .filter-btn');
+                if(firstBtn) firstBtn.classList.add('active');
             }
-            document.getElementById('scorers-body-async').innerHTML = '<tr><td colspan="4" style="text-align:center;padding:20px;color:var(--text-muted);">Загрузка топ-страйкеров...</td></tr>';
+            document.getElementById('scorers-body-async').innerHTML = '<tr><td colspan="4" style="text-align:center;padding:20px;color:var(--text-muted);">Загрузка бомбардиров лиги...</td></tr>';
             try {
                 let res = await (await fetch('/api/scorers/' + code)).json();
-                document.getElementById('scorers-body-async').innerHTML = res.map(s => `
+                let html = res.map(s => `
                     <tr>
                         <td style="font-weight:bold;">${s.name}</td>
                         <td style="color:var(--text-muted);font-size:11px;">${s.team}</td>
@@ -238,7 +253,10 @@
                         <td style="text-align:center;">${s.assists}</td>
                     </tr>
                 `).join('');
-            } catch(e) {}
+                document.getElementById('scorers-body-async').innerHTML = html || '<tr><td colspan="4" style="text-align:center;padding:20px;">Нет данных о бомбардирах</td></tr>';
+            } catch(e) {
+                document.getElementById('scorers-body-async').innerHTML = '<tr><td colspan="4" style="text-align:center;padding:20px;color:#e74c3c;">Ошибка получения топ-страйкеров</td></tr>';
+            }
         }
 
         function switchTab(id, btn) {
@@ -275,23 +293,4 @@
         }
 
         async function sendReaction(id, type) {
-            let fd = new FormData(); fd.append('news_id', id); fd.append('type', type);
-            try {
-                let res = await (await fetch('/api/reaction', { method: 'POST', body: fd })).json();
-                if(res.status === 'success') {
-                    document.getElementById('l-cnt-'+id).innerText = res.likes;
-                    document.getElementById('dl-cnt-'+id).innerText = res.dislikes;
-                    showToast("Оценка сохранена!");
-                }
-            } catch(e) {}
-        }
-
-        window.addEventListener('DOMContentLoaded', () => {
-            let sT = localStorage.getItem('theme') || 'dark';
-            document.body.setAttribute('data-theme', sT);
-            document.getElementById('theme-btn').innerText = sT === 'light' ? '🌙 Ночь' : '☀️ День';
-            savedBookmarks.forEach(id => { let b = document.querySelector(`#news-${id} .bookmark-btn`); if(b) b.classList.add('saved'); });
-        });
-    </script>
-</body>
-</html>
+      
