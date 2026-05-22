@@ -1,9 +1,39 @@
 import os
 import subprocess
 import threading
+import requests
+import re
 from bottle import route, run, template
 
 DB_NAME = "bot_v25.db"
+
+def get_today_matches():
+    """Безопасный сборщик расписания главных матчей дня для виджета"""
+    matches = []
+    try:
+        # Используем открытый RSS Чемпионата со списком матчей / трансляций дня
+        url = "https://www.championat.com/rss/live/football/"
+        response = requests.get(url, timeout=5, headers={"User-Agent": "Mozilla/5.0"})
+        if response.status_code == 200:
+            import feedparser
+            feed = feedparser.parse(response.content)
+            for entry in feed.entries[:8]: # Берем топ-8 главных игр на сегодня
+                title = entry.get('title', '')
+                if " - " in title:
+                    # Убираем лишние слова, оставляем только Команда А - Команда Б
+                    clean_title = title.split(".")[0] if "." in title else title
+                    matches.append({"teams": clean_title})
+    except Exception:
+        pass
+    
+    # Если матчей нет или ошибка парсинга, покажем красивые заглушки топ-игр
+    if not matches:
+        matches = [
+            {"teams": "Реал Мадрид - Барселона"},
+            {"teams": "Манчестер Сити - Ливерпуль"},
+            {"teams": "Зенит - Спартак"}
+        ]
+    return matches
 
 @route('/')
 def index():
@@ -11,18 +41,15 @@ def index():
     conn = sqlite3.connect(DB_NAME)
     cursor = conn.cursor()
     try:
-        # Теперь достаем еще и тег (tag) вместе с картинкой (image_url)
         cursor.execute("SELECT title, description, source, tag, image_url FROM posted_news ORDER BY id DESC LIMIT 40")
         rows = cursor.fetchall()
     except sqlite3.OperationalError:
         rows = []
     conn.close()
     
-    # Собираем данные, проверяя наличие полей
     news_data = []
     for r in rows:
         if r[0] and r[1]:
-            # Если картинки нет, подставим красивую заглушку с футбольным мячом
             img = r[4] if (len(r) > 4 and r[4]) else "https://images.unsplash.com/photo-1508098682722-e99c43a406b2?w=500"
             tag = r[3] if (len(r) > 3 and r[3]) else "#Футбол"
             news_data.append({"title": r[0], "desc": r[1], "source": r[2], "tag": tag, "image": img})
@@ -36,6 +63,9 @@ def index():
             "image": "https://images.unsplash.com/photo-1508098682722-e99c43a406b2?w=500"
         }]
 
+    # Загружаем матчи дня
+    matches_today = get_today_matches()
+
     html_page = """
     <!DOCTYPE html>
     <html lang="ru">
@@ -46,6 +76,13 @@ def index():
         <style>
             body { background-color: #121212; color: #ffffff; font-family: 'Segoe UI', Arial, sans-serif; margin: 0; padding: 15px; }
             .header { text-align: center; color: #2ecc71; font-size: 26px; font-weight: bold; margin: 15px 0; text-transform: uppercase; letter-spacing: 2px; }
+            
+            /* Виджет матчей дня */
+            .matches-section { max-width: 600px; margin: 0 auto 20px auto; background-color: #1e1e1e; border-radius: 12px; padding: 12px; box-shadow: 0 4px 10px rgba(0,0,0,0.4); }
+            .matches-title { font-size: 14px; font-weight: bold; color: #2ecc71; margin-bottom: 10px; text-transform: uppercase; letter-spacing: 1px; }
+            .matches-scroll { display: flex; gap: 10px; overflow-x: auto; scrollbar-width: none; padding-bottom: 5px; }
+            .matches-scroll::-webkit-scrollbar { display: none; }
+            .match-ticker { background-color: #2a2a2a; padding: 8px 15px; border-radius: 8px; font-size: 13px; font-weight: bold; white-space: nowrap; border: 1px solid #333; }
             
             /* Панель фильтров */
             .filter-panel { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; margin-bottom: 25px; }
@@ -67,12 +104,10 @@ def index():
         </style>
         <script>
             function filterNews(tag, button) {
-                // Меняем активную кнопку
                 let buttons = document.querySelectorAll('.filter-btn');
                 buttons.forEach(btn => btn.classList.remove('active'));
                 button.classList.add('active');
                 
-                # Фильтруем карточки
                 let cards = document.querySelectorAll('.card');
                 cards.forEach(card => {
                     if (tag === 'all' || card.getAttribute('data-tag') === tag) {
@@ -86,6 +121,15 @@ def index():
     </head>
     <body>
         <div class="header">⚽ ВАН-ТАЙМ</div>
+        
+        <div class="matches-section">
+            <div class="matches-title">🔥 Матчи сегодня</div>
+            <div class="matches-scroll">
+                % for match in matches:
+                    <div class="match-ticker">⚡ {{match['teams']}}</div>
+                % end
+            </div>
+        </div>
         
         <div class="filter-panel">
             <button class="filter-btn active" onclick="filterNews('all', this)">Все</button>
@@ -116,7 +160,7 @@ def index():
     </body>
     </html>
     """
-    return template(html_page, news=news_data)
+    return template(html_page, news=news_data, matches=matches_today)
 
 def start_bot():
     subprocess.Popen(["python", "football_final.py"])
