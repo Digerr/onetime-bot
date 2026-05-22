@@ -15,7 +15,7 @@ def index():
         cursor.execute("SELECT title, description, source FROM news ORDER BY id DESC LIMIT 30")
         rows = cursor.fetchall()
     except sqlite3.OperationalError:
-        # Если бот еще не создал таблицу news или она пустая
+        # Если таблица news еще не создана ботом
         rows = []
     conn.close()
     
@@ -34,7 +34,7 @@ def index():
     <head>
         <meta charset="UTF-8">
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <title>SYNTHESIS FOOTBALL</title>
+        <title>ВАН-ТАЙМ | Футбольный агрегатор</title>
         <style>
             body { background-color: #121212; color: #ffffff; font-family: Arial, sans-serif; margin: 0; padding: 20px; }
             .header { text-align: center; color: #2ecc71; font-size: 24px; font-weight: bold; margin-bottom: 25px; text-transform: uppercase; letter-spacing: 2px; }
@@ -46,7 +46,7 @@ def index():
         </style>
     </head>
     <body>
-        <div class="header">⚽ SYNTHESIS FOOTBALL</div>
+        <div class="header">⚽ ВАН-ТАЙМ</div>
         
         % for item in news:
             <div class="card">
@@ -63,14 +63,14 @@ def index():
     return template(html_page, news=news_data)
 
 def start_bot():
-    # Запуск твоего основного бота в фоне параллельно с сайтом
+    # Запуск твоего основного файла в фоне
     subprocess.Popen(["python", "football_final.py"])
 
 if __name__ == "__main__":
-    # 1. Запускаем бота
+    # 1. Запускаем бота в отдельном потоке
     threading.Thread(target=start_bot, daemon=True).start()
     
     # 2. Запускаем сайт наружу для Railway
     port = int(os.environ.get("PORT", 8080))
     run(host='0.0.0.0', port=port)
-  
+    
