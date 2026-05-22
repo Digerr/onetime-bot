@@ -8,9 +8,11 @@ from bottle import route, run, template, response, request
 
 DB_NAME = "bot_v25.db"
 
-def init_comments_db():
+def init_extended_db():
+    """Создаем таблицы для комментариев и реакций, если их еще нет"""
     conn = sqlite3.connect(DB_NAME)
     cursor = conn.cursor()
+    # Таблица комментариев
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS comments (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -20,27 +22,46 @@ def init_comments_db():
             timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
     """)
+    # Таблица лайков/дизлайков
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS reactions (
+            news_id TEXT PRIMARY KEY,
+            likes INTEGER DEFAULT 0,
+            dislikes INTEGER DEFAULT 0
+        )
+    """)
     conn.commit()
     conn.close()
 
 def get_today_matches():
+    """Продвинутый сборщик матчей: вытаскивает счет, статусы и ссылки на видеообзоры"""
     matches = []
     try:
         url = "https://www.scorebat.com/video-api/v3/"
         res = requests.get(url, timeout=5, headers={"User-Agent": "Mozilla/5.0"})
         if res.status_code == 200:
             data = res.json()
-            for item in data.get('response', [])[:8]:
+            for item in data.get('response', [])[:10]:
                 title = item.get('title', '')
+                video_url = item.get('matchviewUrl', '') # Ссылка на хайлайты/обзор
+                
+                # Проверяем, идет ли матч прямо сейчас или завершен
+                # В данном API наличие видео часто означает, что матч завершен или забит гол
+                status = "Завершен" if video_url else "LIVE / Скоро"
+                
                 if " - " in title:
-                    matches.append({"teams": title})
+                    matches.append({
+                        "teams": title,
+                        "status": status,
+                        "video": video_url
+                    })
     except Exception:
         pass
     
     if not matches:
         matches = [
-            {"teams": "Матчи лиг появятся перед началом туров"},
-            {"teams": "Следите за обновлениями ВАН-ТАЙМ"}
+            {"teams": "Матчи лиг появятся перед началом туров", "status": "Ожидание", "video": ""},
+            {"teams": "Следите за обновлениями ВАН-ТАЙМ", "status": "Инфо", "video": ""}
         ]
     return matches
 
@@ -48,7 +69,13 @@ def fetch_news_from_db():
     conn = sqlite3.connect(DB_NAME)
     cursor = conn.cursor()
     try:
-        cursor.execute("SELECT url, title, description, source, tag, image_url, published FROM posted_news ORDER BY id DESC LIMIT 40")
+        cursor.execute("""
+            SELECT p.url, p.title, p.description, p.source, p.tag, p.image_url, p.published, 
+                   IFNULL(r.likes, 0), IFNULL(r.dislikes, 0)
+            FROM posted_news p
+            LEFT JOIN reactions r ON abs(hash(p.url)) = r.news_id
+            ORDER BY p.id DESC LIMIT 40
+        """)
         rows = cursor.fetchall()
     except sqlite3.OperationalError:
         rows = []
@@ -57,11 +84,11 @@ def fetch_news_from_db():
     news_data = []
     for r in rows:
         if r[1] and r[2]:
-            img = r[5] if (len(r) > 5 and r[5]) else "https://images.unsplash.com/photo-1508098682722-e99c43a406b2?w=500"
-            tag = r[4] if (len(r) > 4 and r[4]) else "#Футбол"
+            img = r[5] if r[5] else "https://images.unsplash.com/photo-1508098682722-e99c43a406b2?w=500"
+            tag = r[4] if r[4] else "#Футбол"
             
             time_str = "00:00"
-            if len(r) > 6 and r[6]:
+            if r[6]:
                 try:
                     time_str = r[6].split()[1][:5]
                 except Exception:
@@ -75,9 +102,43 @@ def fetch_news_from_db():
                 "source": r[3], 
                 "tag": tag, 
                 "image": img,
-                "time": time_str
+                "time": time_str,
+                "likes": r[7] if len(r) > 7 else 0,
+                "dislikes": r[8] if len(r) > 8 else 0
             })
     return news_data
+
+@route('/api/news')
+def api_news():
+    response.content_type = 'application/json; charset=UTF-8'
+    return json.dumps(fetch_news_from_db(), ensure_ascii=False)
+
+@route('/api/reaction', method='POST')
+def handle_reaction():
+    """Обработка кликов по лайкам и дизлайкам"""
+    news_id = request.forms.get('news_id')
+    type_reaction = request.forms.get('type') # 'like' или 'dislike'
+    
+    if news_id and type_reaction:
+        conn = sqlite3.connect(DB_NAME)
+        cursor = conn.cursor()
+        # Проверяем, есть ли уже запись для этой новости в таблице реакций
+        cursor.execute("SELECT 1 FROM reactions WHERE news_id = ?", (news_id,))
+        if not cursor.fetchone():
+            cursor.execute("INSERT INTO reactions (news_id, likes, dislikes) VALUES (?, 0, 0)", (news_id,))
+            
+        if type_reaction == 'like':
+            cursor.execute("UPDATE reactions SET likes = likes + 1 WHERE news_id = ?", (news_id,))
+        elif type_reaction == 'dislike':
+            cursor.execute("UPDATE reactions SET dislikes = dislikes + 1 WHERE news_id = ?", (news_id,))
+            
+        conn.commit()
+        # Достаем обновленные значения, чтобы вернуть их на сайт
+        cursor.execute("SELECT likes, dislikes FROM reactions WHERE news_id = ?", (news_id,))
+        res = cursor.fetchone()
+        conn.close()
+        return {"status": "success", "likes": res[0], "dislikes": res[1]}
+    return {"status": "error"}
 
 @route('/api/comments/add', method='POST')
 def add_comment():
@@ -109,13 +170,9 @@ def index():
     news_data = fetch_news_from_db()
     if not news_data:
         news_data = [{
-            "id": "0",
-            "title": "Лента «ВАН-ТАЙМ» обновляется", 
-            "desc": "Бот собирает свежие футбольные инсайды...", 
-            "source": "Система",
-            "tag": "#Футбол",
-            "image": "https://images.unsplash.com/photo-1508098682722-e99c43a406b2?w=500",
-            "time": "Сейчас"
+            "id": "0", "title": "Лента «ВАН-ТАЙМ» обновляется", "desc": "Бот собирает свежие футбольные инсайды...", 
+            "source": "Система", "tag": "#Футбол", "image": "https://images.unsplash.com/photo-1508098682722-e99c43a406b2?w=500", 
+            "time": "Сейчас", "likes": 0, "dislikes": 0
         }]
     matches_today = get_today_matches()
 
@@ -134,10 +191,18 @@ def index():
         .nav-tab-btn.active::after { content: ''; position: absolute; bottom: -11px; left: 0; width: 100%; height: 3px; background-color: #2ecc71; }
         .tab-content { display: none; max-width: 600px; margin: 0 auto; }
         .tab-content.active { display: block; }
+        
+        /* Виджет матчей */
         .matches-section { background-color: #1e1e1e; border-radius: 12px; padding: 15px; box-shadow: 0 4px 10px rgba(0,0,0,0.4); }
         .matches-title { font-size: 15px; font-weight: bold; color: #2ecc71; margin-bottom: 15px; text-transform: uppercase; }
         .matches-vertical-list { display: flex; flex-direction: column; gap: 10px; }
-        .match-ticker { background-color: #2a2a2a; padding: 12px 15px; border-radius: 8px; font-size: 14px; font-weight: bold; border: 1px solid #333; display: flex; align-items: center; gap: 10px; }
+        .match-ticker { background-color: #2a2a2a; padding: 12px 15px; border-radius: 8px; font-size: 14px; font-weight: bold; border: 1px solid #333; display: flex; flex-direction: column; gap: 8px; }
+        .match-meta { display: flex; justify-content: space-between; align-items: center; width: 100%; }
+        .match-status { font-size: 11px; background-color: #333; padding: 2px 6px; border-radius: 4px; color: #aaa; }
+        .match-status.live { background-color: rgba(231, 76, 60, 0.2); color: #e74c3c; border: 1px solid #e74c3c; }
+        .video-btn { background-color: #2ecc71; color: #121212; text-decoration: none; padding: 4px 10px; border-radius: 6px; font-size: 12px; font-weight: bold; text-align: center; }
+        
+        /* Таблицы лиг */
         .table-container-box { background-color: #1e1e1e; border-radius: 12px; padding: 15px; box-shadow: 0 4px 10px rgba(0,0,0,0.4); }
         .league-select-panel { display: flex; gap: 8px; margin-bottom: 15px; justify-content: center; }
         .league-sub-btn { background-color: #2a2a2a; color: #aaa; border: 1px solid #333; padding: 6px 12px; border-radius: 6px; font-size: 12px; font-weight: bold; cursor: pointer; }
@@ -148,6 +213,8 @@ def index():
         .league-table th { color: #666; padding: 8px 6px; border-bottom: 1px solid #333; font-size: 12px; }
         .league-table td { padding: 10px 6px; border-bottom: 1px solid #222; }
         .league-table tr:nth-child(-n+4) td:first-child { color: #2ecc71; font-weight: bold; }
+        
+        /* Фильтры и карточки */
         .filter-panel { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; margin-bottom: 20px; }
         .filter-btn { background-color: #1e1e1e; color: #b3b3b3; border: 1px solid #333; padding: 8px 14px; border-radius: 20px; cursor: pointer; font-size: 13px; font-weight: bold; }
         .filter-btn:hover, .filter-btn.active { background-color: #2ecc71; color: #121212; border-color: #2ecc71; }
@@ -161,8 +228,17 @@ def index():
         .tg-link-btn { background-color: #2481cc; color: white; border: none; padding: 4px 10px; border-radius: 12px; font-size: 11px; font-weight: bold; text-decoration: none; }
         .card-title { color: #ffffff; font-size: 19px; font-weight: bold; margin: 0 0 10px 0; line-height: 1.3; }
         .card-desc { color: #cccccc; font-size: 14px; line-height: 1.5; margin-bottom: 12px; }
-        .card-footer { display: flex; justify-content: space-between; color: #666; font-size: 12px; font-style: italic; border-top: 1px solid #2a2a2a; padding-top: 10px; margin-bottom: 10px; }
+        .card-footer { display: flex; justify-content: space-between; color: #666; font-size: 12px; font-style: italic; border-top: 1px solid #2a2a2a; padding-top: 10px; margin-bottom: 12px; }
         .card-time { color: #2ecc71; font-weight: bold; }
+        
+        /* Интерактивная панель (Лайки + Комменты) */
+        .interactive-panel { display: flex; justify-content: space-between; align-items: center; }
+        .reactions-group { display: flex; gap: 10px; }
+        .react-btn { background-color: #252525; border: 1px solid #333; color: #aaa; padding: 5px 12px; border-radius: 6px; font-size: 13px; cursor: pointer; font-weight: bold; display: flex; align-items: center; gap: 5px; }
+        .react-btn:hover { border-color: #2ecc71; color: white; }
+        .comment-toggle-btn { background-color: transparent; border: 1px solid #444; color: #aaa; padding: 5px 12px; border-radius: 6px; font-size: 13px; cursor: pointer; font-weight: bold; }
+        
+        /* Шторка комментариев */
         .comments-box { background-color: #171717; padding: 12px; border-top: 1px solid #252525; display: none; }
         .comments-list { max-height: 150px; overflow-y: auto; margin-bottom: 10px; font-size: 13px; }
         .comment-item { margin-bottom: 8px; padding-bottom: 6px; border-bottom: 1px dashed #222; }
@@ -171,7 +247,7 @@ def index():
         .comment-input-row { display: flex; gap: 6px; }
         .comment-input { flex: 1; background-color: #252525; border: 1px solid #333; color: white; padding: 6px 10px; border-radius: 6px; font-size: 13px; }
         .comment-btn { background-color: #2ecc71; color: #121212; border: none; padding: 6px 12px; border-radius: 6px; font-weight: bold; cursor: pointer; font-size: 13px; }
-        .comment-toggle-btn { background-color: transparent; border: 1px solid #444; color: #aaa; padding: 4px 10px; border-radius: 6px; font-size: 12px; cursor: pointer; font-weight: bold; }
+        
         .footer { text-align: center; color: #444; font-size: 12px; margin-top: 40px; padding-bottom: 20px; }
     </style>
     <script>
@@ -203,6 +279,19 @@ def index():
                     card.classList.add('hidden');
                 }
             });
+        }
+        async function sendReaction(newsId, typeReaction) {
+            let formData = new FormData();
+            formData.append('news_id', newsId);
+            formData.append('type', typeReaction);
+            try {
+                let res = await fetch('/api/reaction', { method: 'POST', body: formData });
+                let data = await res.json();
+                if(data.status === 'success') {
+                    document.getElementById('l-cnt-' + newsId).innerText = data.likes;
+                    document.getElementById('dl-cnt-' + newsId).innerText = data.dislikes;
+                }
+            } catch(e) {}
         }
         async function toggleComments(newsId) {
             let box = document.getElementById("box-" + newsId);
@@ -238,11 +327,9 @@ def index():
             textInput.value = '';
             loadComments(newsId);
         }
-        
-        // Надежное автообновление страницы раз в 60 секунд без зависания кавычек
         setInterval(function() {
             window.location.reload();
-        }, 60000);
+        }, 90000); // Мягкое автообновление раз в 1.5 минуты
     </script>
 </head>
 <body>
@@ -278,91 +365,10 @@ def index():
                             <span>Источник: {{item['source']}}</span>
                             <span class="card-time">🕒 {{item['time']}}</span>
                         </div>
-                        <button class="comment-toggle-btn" onclick="toggleComments('{{item['id']}}')">💬 Комментарии</button>
-                    </div>
-                    <div class="comments-box" id="box-{{item['id']}}">
-                        <div class="comments-list" id="list-{{item['id']}}"></div>
-                        <div style="margin-bottom:6px;">
-                            <input type="text" class="comment-input" id="name-{{item['id']}}" placeholder="Имя" style="width:140px; margin-bottom:4px;">
-                        </div>
-                        <div class="comment-input-row">
-                            <input type="text" class="comment-input" id="text-{{item['id']}}" placeholder="Напишите комментарий...">
-                            <button class="comment-btn" onclick="sendComment('{{item['id']}}')">Отправить</button>
-                        </div>
-                    </div>
-                </div>
-            % end
-        </div>
-    </div>
-
-    <div id="tab-matches" class="tab-content">
-        <div class="matches-section">
-            <div class="matches-title">🔥 Матчи сегодня</div>
-            <div class="matches-vertical-list">
-                % for match in matches:
-                    <div class="match-ticker">⚽ {{match['teams']}}</div>
-                % end
-            </div>
-        </div>
-    </div>
-
-    <div id="tab-tables" class="tab-content">
-        <div class="table-container-box">
-            <div class="league-select-panel">
-                <button class="league-sub-btn active" onclick="switchLeague('l-apl', this)">АПЛ</button>
-                <button class="league-sub-btn" onclick="switchLeague('l-rpl', this)">РПЛ</button>
-                <button class="league-sub-btn" onclick="switchLeague('l-laliga', this)">Ла Лига</button>
-            </div>
-
-            <div id="l-apl" class="league-table-wrapper active">
-                <table class="league-table">
-                    <thead><tr><th>#</th><th>Команда</th><th>И</th><th>О</th></tr></thead>
-                    <tbody>
-                        <tr><td>1</td><td>Арсенал</td><td>38</td><td>89</td></tr>
-                        <tr><td>2</td><td>Манчестер Сити</td><td>38</td><td>88</td></tr>
-                        <tr><td>3</td><td>Ливерпуль</td><td>38</td><td>82</td></tr>
-                        <tr><td>4</td><td>Челси</td><td>38</td><td>67</td></tr>
-                    </tbody>
-                </table>
-            </div>
-
-            <div id="l-rpl" class="league-table-wrapper">
-                <table class="league-table">
-                    <thead><tr><th>#</th><th>Команда</th><th>И</th><th>О</th></tr></thead>
-                    <tbody>
-                        <tr><td>1</td><td>Зенит</td><td>30</td><td>57</td></tr>
-                        <tr><td>2</td><td>Краснодар</td><td>30</td><td>56</td></tr>
-                        <tr><td>3</td><td>Динамо М</td><td>30</td><td>56</td></tr>
-                        <tr><td>4</td><td>Локомотив</td><td>30</td><td>53</td></tr>
-                    </tbody>
-                </table>
-            </div>
-
-            <div id="l-laliga" class="league-table-wrapper">
-                <table class="league-table">
-                    <thead><tr><th>#</th><th>Команда</th><th>И</th><th>О</th></tr></thead>
-                    <tbody>
-                        <tr><td>1</td><td>Реал Мадрид</td><td>38</td><td>95</td></tr>
-                        <tr><td>2</td><td>Барселона</td><td>38</td><td>85</td></tr>
-                        <tr><td>3</td><td>Жирона</td><td>38</td><td>81</td></tr>
-                        <tr><td>4</td><td>Атлетико</td><td>38</td><td>76</td></tr>
-                    </tbody>
-                </table>
-            </div>
-        </div>
-    </div>
-    
-    <div class="footer">ВАН-ТАЙМ Спортивный Медиа-Хаб 2026</div>
-</body>
-</html>"""
-    return template(html_page, news=news_data, matches=matches_today)
-
-def start_bot():
-    subprocess.Popen(["python", "football_final.py"])
-
-if __name__ == "__main__":
-    init_comments_db()
-    threading.Thread(target=start_bot, daemon=True).start()
-    port = int(os.environ.get("PORT", 8080))
-    run(host='0.0.0.0', port=port)
-    
+                        
+                        <div class="interactive-panel">
+                            <div class="reactions-group">
+                                <button class="react-btn" onclick="sendReaction('{{item['id']}}', 'like')">👍 <span id="l-cnt-{{item['id']}}">{{item['likes']}}</span></button>
+                                <button class="react-btn" onclick="sendReaction('{{item['id']}}', 'dislike')">👎 <span id="dl-cnt-{{item['id']}}">{{item['dislikes']}}</span></button>
+                            </div>
+                           
