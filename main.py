@@ -13,6 +13,9 @@ API_KEY = "c7c58272f8b84c73b73483d15a3a8b03"
 DB_NAME = "bot_v25.db"
 API_CACHE = {}
 
+# Список поддерживаемых лиг для валидации
+ALLOWED_LEAGUES = ["PL", "PD", "SA", "BL1", "FL1", "PPL"]
+
 def init_extended_db():
     conn = sqlite3.connect(DB_NAME)
     cursor = conn.cursor()
@@ -31,9 +34,14 @@ def init_extended_db():
     conn.close()
 
 def translate_safe(text, translator):
-    if not text or len(text) > 30: return text
-    try: return translator.translate(text)
-    except: return text
+    if not text: return ""
+    if len(text) > 40: return text
+    try: 
+        clean_text = text.encode('ascii', 'ignore').decode('ascii').strip()
+        if not clean_text: return text
+        return translator.translate(clean_text)
+    except: 
+        return text
 
 @route('/api/matches')
 def api_matches():
@@ -51,12 +59,14 @@ def api_matches():
     try:
         res = requests.get(f"https://api.football-data.org/v4/matches?dateFrom={date_from}&dateTo={date_to}", headers=headers, timeout=6)
         if res.status_code == 200:
-            for m in res.json().get('matches', [])[:25]:
+            for m in res.json().get('matches', [])[:30]:
                 h_name = translate_safe(m['homeTeam']['name'], translator)
                 a_name = translate_safe(m['awayTeam']['name'], translator)
+                
+                # Имена авторов голов оставляем в оригинале
                 scorers_text = ""
                 if m.get('goals'):
-                    scorers_list = [f"{translate_safe(g.get('scorer', {}).get('name', ''), translator)} {g.get('minute', '')}'" for g in m['goals']]
+                    scorers_list = [f"{g.get('scorer', {}).get('name', 'Player')} {g.get('minute', '')}'" for g in m['goals']]
                     scorers_text = "⚽ " + ", ".join(scorers_list)
                 
                 raw_status = m.get('status', '')
@@ -80,6 +90,8 @@ def api_matches():
 @route('/api/tables/<league_code>')
 def api_table(league_code):
     response.content_type = 'application/json; charset=UTF-8'
+    if league_code not in ALLOWED_LEAGUES: return json.dumps([])
+    
     now = time.time()
     cache_key = f'table_{league_code}'
     if cache_key in API_CACHE and now - API_CACHE[cache_key]['time'] < 300:
@@ -93,7 +105,7 @@ def api_table(league_code):
         if res.status_code == 200:
             standings = res.json().get('standings', [])
             if standings:
-                for team in standings[0].get('table', [])[:10]:
+                for team in standings[0].get('table', [])[:15]:
                     table_data.append({
                         "pos": team['position'], "name": translate_safe(team['team']['name'], translator),
                         "crest": team['team'].get('crest', ''), "games": team['playedGames'],
@@ -107,6 +119,8 @@ def api_table(league_code):
 @route('/api/scorers/<league_code>')
 def api_scorers(league_code):
     response.content_type = 'application/json; charset=UTF-8'
+    if league_code not in ALLOWED_LEAGUES: return json.dumps([])
+    
     now = time.time()
     cache_key = f'scorers_{league_code}'
     if cache_key in API_CACHE and now - API_CACHE[cache_key]['time'] < 300:
@@ -119,10 +133,13 @@ def api_scorers(league_code):
         res = requests.get(f"https://api.football-data.org/v4/competitions/{league_code}/scorers", headers=headers, timeout=5)
         if res.status_code == 200:
             for s in res.json().get('scorers', [])[:10]:
+                p_name = s.get('player', {}).get('name', 'Игрок') # Оставляем в оригинале (без перевода)
+                t_name = s.get('team', {}).get('name', 'Клуб')
                 scorers_data.append({
-                    "name": translate_safe(s['player']['name'], translator),
-                    "team": translate_safe(s['team']['name'], translator),
-                    "goals": s['goals'], "assists": s.get('assists') or 0
+                    "name": p_name,
+                    "team": translate_safe(t_name, translator),
+                    "goals": s.get('goals', 0), 
+                    "assists": s.get('assists') if s.get('assists') is not None else 0
                 })
     except: pass
     API_CACHE[cache_key] = {'data': scorers_data, 'time': now}
@@ -177,3 +194,4 @@ if __name__ == "__main__":
     init_extended_db()
     threading.Thread(target=start_bot, daemon=True).start()
     run(host='0.0.0.0', port=int(os.environ.get("PORT", 8080)))
+    
