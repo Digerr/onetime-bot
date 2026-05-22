@@ -8,7 +8,7 @@ from bottle import route, run, template, response, request
 from datetime import datetime, timedelta
 from deep_translator import GoogleTranslator
 
-# Твой рабочий API-ключ
+# Твой вшитый API-ключ
 API_KEY = "c7c58272f8b84c73b73483d15a3a8b03" 
 
 DB_NAME = "bot_v25.db"
@@ -36,7 +36,7 @@ def init_extended_db():
     conn.close()
 
 def get_live_matches_365():
-    """Сборщик матчей на сегодня уровня 365scores с автопереводом клубов на русский"""
+    """Сборщик матчей на сегодня уровня 365scores с авторами голов и автопереводом"""
     headers = {'X-Auth-Token': API_KEY}
     live_matches = []
     translator = GoogleTranslator(source='auto', target='ru')
@@ -56,7 +56,6 @@ def get_live_matches_365():
                     home_team = m['homeTeam']['name']
                     away_team = m['awayTeam']['name']
                     
-                    # Переводим названия клубов на русский язык
                     try:
                         home_team_ru = translator.translate(home_team)
                         away_team_ru = translator.translate(away_team)
@@ -66,6 +65,20 @@ def get_live_matches_365():
                     
                     home_score = m['score']['fullTime']['home'] if m['score']['fullTime']['home'] is not None else 0
                     away_score = m['score']['fullTime']['away'] if m['score']['fullTime']['away'] is not None else 0
+                    
+                    # Собираем авторов голов (если они есть в ответе API)
+                    scorers_text = ""
+                    goals = m.get('goals', [])
+                    if goals:
+                        scorers_list = []
+                        for g in goals:
+                            player_name = g.get('scorer', {}).get('name', 'Игрок')
+                            minute = g.get('minute', '')
+                            # Быстро переводим фамилию, если это не длинная строка
+                            try: player_name_ru = translator.translate(player_name) if len(player_name) < 25 else player_name
+                            except: player_name_ru = player_name
+                            scorers_list.append(f"{player_name_ru} {minute}'")
+                        scorers_text = "⚽ " + ", ".join(scorers_list)
                     
                     raw_status = m.get('status', '')
                     if raw_status == 'IN_PLAY':
@@ -83,15 +96,16 @@ def get_live_matches_365():
                     live_matches.append({
                         "teams": f"{home_team_ru} {home_score} : {away_score} {away_team_ru}",
                         "status": status,
-                        "league": m['competition']['name']
+                        "league": m['competition']['name'],
+                        "scorers": scorers_text
                     })
     except Exception:
         pass
         
     if not live_matches:
         live_matches = [
-            {"teams": "Сегодня в топ-лигах API затишье. Матчи появятся ближе к турам.", "status": "Инфо", "league": "Центр LIVE"},
-            {"teams": "Переключитесь на вкладку 'Лента' или 'Таблицы'", "status": "Инфо", "league": "ВАН-ТАЙМ"}
+            {"teams": "Сегодня в топ-лигах API затишье. Матчи появятся ближе к турам.", "status": "Инфо", "league": "Центр LIVE", "scorers": ""},
+            {"teams": "Переключитесь на вкладку 'Лента' или 'Таблицы'", "status": "Инфо", "league": "ВАН-ТАЙМ", "scorers": ""}
         ]
     return live_matches
 
