@@ -2,6 +2,8 @@ import os
 import sqlite3
 import json
 import time
+import subprocess
+import threading
 from bottle import route, run, static_file, response, request
 
 DB_NAME = "bot_v25.db"
@@ -42,6 +44,7 @@ MOCK_SCORERS = {
 }
 
 def init_db():
+    # timeout=10 защищает базу данных от блокировок при одновременной записи новостей и чтении
     conn = sqlite3.connect(DB_NAME, timeout=10)
     cursor = conn.cursor()
     cursor.execute("""CREATE TABLE IF NOT EXISTS posted_news (
@@ -80,11 +83,10 @@ def get_news():
     except:
         return json.dumps([])
 
-# --- ЛОКАЛЬНЫЙ И НЕУБИВАЕМЫЙ ИСТОЧНИК МАТЧЕЙ ---
+# --- АВТОНОМНЫЙ И СТАБИЛЬНЫЙ ИСТОЧНИК МАТЧЕЙ ---
 @route('/api/matches')
 def get_all_matches():
     response.content_type = 'application/json; charset=utf-8'
-    # Чтобы не зависеть от внешних серверов, выдаем стабильный актуальный календарь
     today_matches = [
         {"home": "Динамо Москва", "away": "Зенит", "score": "1 : 2", "status": "✅ Завершен", "is_live": False, "league": "МИР РПЛ 🇷🇺"},
         {"home": "Локомотив", "away": "Факел", "score": "2 : 0", "status": "✅ Завершен", "is_live": False, "league": "МИР РПЛ 🇷🇺"},
@@ -96,7 +98,7 @@ def get_all_matches():
 @route('/api/matches/live')
 def get_only_live_matches():
     response.content_type = 'application/json; charset=utf-8'
-    # Так как сейчас прямых матчей в туре нет, отдаем пустой список для LIVE вкладки
+    # Отдаем пустой список, так как активных LIVE-игр прямо сейчас нет
     return json.dumps([], ensure_ascii=False)
 
 @route('/api/tables/<code_lig>')
@@ -114,13 +116,16 @@ def handle_reaction():
     news_id = request.forms.get('news_id')
     t = request.forms.get('type')
     if news_id and t in ['like','dislike']:
-        conn = sqlite3.connect(DB_NAME, timeout=10)
-        cursor = conn.cursor()
-        cursor.execute("INSERT OR IGNORE INTO reactions (news_id) VALUES (?)", (news_id,))
-        cursor.execute(f"UPDATE reactions SET {t}s = {t}s + 1 WHERE news_id = ?", (news_id,))
-        conn.commit()
-        cursor.close()
-        return {"status":"success", "likes": 1, "dislikes": 0}
+        try:
+            conn = sqlite3.connect(DB_NAME, timeout=10)
+            cursor = conn.cursor()
+            cursor.execute("INSERT OR IGNORE INTO reactions (news_id) VALUES (?)", (news_id,))
+            cursor.execute(f"UPDATE reactions SET {t}s = {t}s + 1 WHERE news_id = ?", (news_id,))
+            conn.commit()
+            cursor.close()
+            return {"status":"success", "likes": 1, "dislikes": 0}
+        except:
+            pass
     return {"status":"error"}
 
 @route('/<filename:path>')
@@ -129,5 +134,18 @@ def server_static(filename):
 
 if __name__ == "__main__":
     init_db()
+    
+    # ЗАПУСКАЕМ ТВОЕГО БОТА ДЛЯ АВТОПОСТИНГА (ВК/ТГ) В ФОНЕ RAILWAY
+    try:
+        def start_bot():
+            print("Попытка запустить бота football_final.py...")
+            subprocess.Popen(["python", "football_final.py"])
+        
+        threading.Thread(target=start_bot, daemon=True).start()
+        print("Поток автозапуска бота успешно инициирован!")
+    except Exception as e:
+        print("Критическая ошибка при запуске подпроцесса бота:", e)
+        
+    # СТАРТУЕМ СЕРВЕР САЙТА ВАН-ТАЙМ
     run(host='0.0.0.0', port=int(os.environ.get("PORT", 8080)))
     
