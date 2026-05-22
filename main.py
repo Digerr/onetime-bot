@@ -1,65 +1,21 @@
-# -*- coding: utf-8 -*-
 import os
 import sqlite3
 import json
 import requests
-from bottle import route, run, template, static_file, response
+from bottle import route, run, static_file, response
 from dotenv import load_dotenv
 
 load_dotenv()
 
 DB_NAME = "bot_v25.db"
-FOOTBALL_API_KEY = os.getenv("FOOTBALL_API_KEY", "")
-
-def init_db():
-    conn = sqlite3.connect(DB_NAME)
-    cursor = conn.cursor()
-    cursor.execute("""
-        CREATE TABLE IF NOT EXISTS posted_news (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            url TEXT UNIQUE,
-            title TEXT,
-            description TEXT,
-            source TEXT,
-            tag TEXT,
-            image_url TEXT,
-            published TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            posted_to_vk INTEGER DEFAULT 0
-        )
-    """)
-    conn.commit()
-    conn.close()
+FOOTBALL_API_KEY = os.getenv("FOOTBALL_API_KEY", "c7c58272f8b84c73b73483d15a3a8b03")
 
 @route('/')
 def index():
-    init_db()  # Создаём таблицы, если их нет
-    try:
-        conn = sqlite3.connect(DB_NAME)
-        cursor = conn.cursor()
-        cursor.execute("SELECT url, title, description, source, tag, image_url, published FROM posted_news ORDER BY id DESC LIMIT 20")
-        rows = cursor.fetchall()
-        conn.close()
-
-        news = []
-        for r in rows:
-            news.append({
-                "id": str(abs(hash(r[0]))),
-                "title": r[1],
-                "desc": r[2] or "",
-                "source": r[3],
-                "tag": r[4] or "#Футбол",
-                "image": r[5] or "https://images.unsplash.com/photo-1508098682722-e99c43a406b2",
-                "time": r[6].split()[1][:5] if r[6] else "Свежая"
-            })
-        return template('index.html', news=news)
-    except Exception as e:
-        return f"Ошибка: {e}"
-
-# ... (остальной код /api/news, /api/matches и т.д. оставь как в прошлом сообщении)
+    return static_file('index.html', root='.')
 
 @route('/api/news')
 def get_news():
-    init_db()
     response.content_type = 'application/json; charset=utf-8'
     try:
         conn = sqlite3.connect(DB_NAME)
@@ -134,9 +90,4 @@ def server_static(filename):
     return static_file(filename, root='.')
 
 if __name__ == "__main__":
-    if not os.path.exists('views'):
-        os.makedirs('views')
-    if os.path.exists('index.html') and not os.path.exists('views/index.html'):
-        import shutil
-        shutil.copy('index.html', 'views/index.html')
     run(host='0.0.0.0', port=int(os.environ.get("PORT", 8080)))
