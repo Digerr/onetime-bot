@@ -104,7 +104,7 @@
         </div>
         <div style="background: var(--card-bg); border-radius: 16px; padding: 10px; border: 1px solid var(--border-color); overflow-x: auto;">
             <table class="pro-table">
-                <thead><tr><th>#</th><th style="text-align:left;">Club</th><th>И</th><th>В</th><th>Н</th><th>П</th><th>О</th></tr></thead>
+                <thead><tr><th>#</th><th style="text-align:left;">Клуб</th><th>И</th><th>В</th><th>Н</th><th>П</th><th>О</th></tr></thead>
                 <tbody id="table-body-async"></tbody>
             </table>
         </div>
@@ -178,10 +178,6 @@
                                 <span>🕒 ${n.time} | ${n.source}</span>
                                 <a href="https://t.me/onetime_foot" target="_blank" class="tg-link-btn">В канал ↗</a>
                             </div>
-                            <div class="interact-row">
-                                <button class="react-btn" onclick="sendReaction('${n.id}', 'like')">🔥 <span id="l-${n.id}">${n.likes}</span></button>
-                                <button class="react-btn" onclick="sendReaction('${n.id}', 'dislike')">👎 <span id="d-${n.id}">${n.dislikes}</span></button>
-                            </div>
                         </div>
                     </div>
                 `).join('');
@@ -241,7 +237,7 @@
                     </div>
                 `).join('');
             } catch(e) {
-                document.getElementById('matches-all-box').innerHTML = '<div style="text-align:center;padding:40px;color:var(--text-muted);">Ошибка загрузки календаря</div>';
+                document.getElementById('matches-all-box').innerHTML = '<div style="text-align:center;padding:40px;color:var(--text-muted);">Матчей не найдено</div>';
             }
         }
 
@@ -310,10 +306,11 @@
             btn.classList.add('active'); liveSearch();
         }
 
-        async function sendReaction(id, type) {
-            let fd = new FormData(); fd.append('news_id', id); fd.append('type', type);
-            try {
-                let res = await (await fetch('/api/reaction', { method: 'POST', body: fd })).json();
-                if(res.status === 'success') {
-                    document.getElementById('l-'+id).innerText = res.likes;
-                    document.getElementById('d-'+id).innerText = res.dislikes
+        window.addEventListener('DOMContentLoaded', () => { 
+            loadNews();
+            updateLiveBadge();
+            setInterval(updateLiveBadge, 15000);
+        });
+    </script>
+</body>
+</html>
