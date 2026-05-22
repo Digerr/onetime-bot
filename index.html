@@ -13,72 +13,51 @@
             --bg-color: #f6f8fa; --card-bg: #ffffff; --text-color: #24292f; --text-muted: #57606a;
             --border-color: #d0d7de; --accent: #2da44e; --accent-hover: #2c974b;
         }
-
         * { box-sizing: border-box; }
         body { background-color: var(--bg-color); color: var(--text-color); font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif; margin: 0; padding: 15px; transition: 0.3s; }
-        
         .top-bar { display: flex; justify-content: space-between; align-items: center; max-width: 600px; margin: 0 auto 15px auto; }
-        .header { color: var(--accent); font-size: 24px; font-weight: 800; text-transform: uppercase; letter-spacing: 1px; display: flex; align-items: center; gap: 8px; }
-        .theme-btn { background: var(--card-bg); border: 1px solid var(--border-color); color: var(--text-color); padding: 6px 12px; border-radius: 20px; cursor: pointer; font-weight: bold; font-size: 13px; box-shadow: 0 2px 5px rgba(0,0,0,0.1); }
-        
-        .main-nav { display: flex; justify-content: space-around; max-width: 600px; margin: 0 auto 20px auto; background: var(--card-bg); border-radius: 12px; padding: 5px; box-shadow: 0 4px 12px rgba(0,0,0,0.05); }
-        .nav-tab-btn { flex: 1; background: none; border: none; color: var(--text-muted); font-size: 13px; font-weight: 700; padding: 10px 0; cursor: pointer; border-radius: 8px; transition: 0.2s; }
+        .header { color: var(--accent); font-size: 24px; font-weight: 800; text-transform: uppercase; letter-spacing: 1px; }
+        .theme-btn { background: var(--card-bg); border: 1px solid var(--border-color); color: var(--text-color); padding: 6px 12px; border-radius: 20px; cursor: pointer; font-weight: bold; font-size: 13px; }
+        .main-nav { display: flex; justify-content: space-around; max-width: 600px; margin: 0 auto 20px auto; background: var(--card-bg); border-radius: 12px; padding: 5px; }
+        .nav-tab-btn { flex: 1; background: none; border: none; color: var(--text-muted); font-size: 13px; font-weight: 700; padding: 10px 0; cursor: pointer; border-radius: 8px; }
         .nav-tab-btn.active { background: var(--bg-color); color: var(--accent); box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
         .tab-content { display: none; max-width: 600px; margin: 0 auto; }
-        .tab-content.active { display: block; animation: fadeIn 0.3s ease-in; }
-        @keyframes fadeIn { from { opacity: 0; transform: translateY(5px); } to { opacity: 1; transform: translateY(0); } }
-
+        .tab-content.active { display: block; }
         .search-input { width: 100%; background: var(--card-bg); border: 1px solid var(--border-color); color: var(--text-color); padding: 12px 20px; border-radius: 25px; font-size: 14px; outline: none; margin-bottom: 15px; }
-        
-        /* Фильтры */
         .filter-panel { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; margin-bottom: 20px; }
         .filter-btn { background: var(--card-bg); color: var(--text-muted); border: 1px solid var(--border-color); padding: 6px 12px; border-radius: 15px; cursor: pointer; font-size: 12px; font-weight: bold; }
         .filter-btn.active { background: var(--accent); color: #fff; border-color: var(--accent); }
-
-        /* Карточка новости */
-        .card { background: var(--card-bg); border-radius: 16px; overflow: hidden; box-shadow: 0 4px 15px rgba(0,0,0,0.05); border: 1px solid var(--border-color); margin-bottom: 20px; position: relative; }
+        .card { background: var(--card-bg); border-radius: 16px; overflow: hidden; border: 1px solid var(--border-color); margin-bottom: 20px; position: relative; }
         .card.hidden { display: none; }
         .card-img { width: 100%; height: 220px; object-fit: cover; }
         .card-body { padding: 16px; }
         .card-tag { background: rgba(46, 160, 67, 0.15); color: var(--accent); padding: 4px 10px; border-radius: 6px; font-size: 11px; font-weight: bold; }
-        .bookmark-btn { position: absolute; top: 15px; right: 15px; background: rgba(0,0,0,0.6); color: white; border: none; width: 35px; height: 35px; border-radius: 50%; font-size: 16px; cursor: pointer; display: flex; align-items: center; justify-content: center; backdrop-filter: blur(4px); }
+        .bookmark-btn { position: absolute; top: 15px; right: 15px; background: rgba(0,0,0,0.6); color: white; border: none; width: 35px; height: 35px; border-radius: 50%; font-size: 16px; cursor: pointer; display: flex; align-items: center; justify-content: center; }
         .bookmark-btn.saved { background: var(--accent); }
-        .card-title { font-size: 18px; font-weight: 800; margin: 12px 0; line-height: 1.4; }
-        .card-desc { color: var(--text-muted); font-size: 14px; line-height: 1.6; margin-bottom: 15px; }
-        
+        .card-title { font-size: 18px; font-weight: 800; margin: 12px 0; }
+        .card-desc { color: var(--text-muted); font-size: 14px; line-height: 1.6; }
         .interact-row { display: flex; justify-content: space-between; border-top: 1px solid var(--border-color); padding-top: 12px; margin-top: 10px; }
-        .react-btn { background: var(--bg-color); border: 1px solid var(--border-color); color: var(--text-muted); padding: 6px 12px; border-radius: 8px; font-weight: bold; cursor: pointer; font-size: 13px; }
-        
-        /* Матчи LIVE с логотипами */
-        .match-card { background: var(--card-bg); border-radius: 12px; border: 1px solid var(--border-color); padding: 12px; margin-bottom: 12px; display: flex; flex-direction: column; gap: 8px; }
+        .react-btn { background: var(--bg-color); border: 1px solid var(--border-color); color: var(--text-muted); padding: 6px 12px; border-radius: 8px; cursor: pointer; font-size: 13px; }
+        .match-card { background: var(--card-bg); border-radius: 12px; border: 1px solid var(--border-color); padding: 12px; margin-bottom: 12px; }
         .match-header { display: flex; justify-content: space-between; align-items: center; font-size: 11px; border-bottom: 1px solid var(--border-color); padding-bottom: 6px; }
         .league-info { display: flex; align-items: center; gap: 6px; color: var(--text-muted); font-weight: bold; }
         .league-logo { width: 16px; height: 16px; object-fit: contain; }
-        .status-badge { background: var(--bg-color); color: var(--accent); padding: 3px 8px; border-radius: 6px; font-weight: bold; border: 1px solid var(--border-color); }
-        .status-badge.live { background: rgba(223, 76, 76, 0.1); color: #e74c3c; border-color: #e74c3c; animation: pulse 2s infinite; }
-        @keyframes pulse { 0% { opacity: 1; } 50% { opacity: 0.5; } 100% { opacity: 1; } }
-        
+        .status-badge { background: var(--bg-color); color: var(--accent); padding: 3px 8px; border-radius: 6px; font-weight: bold; }
         .match-teams { display: flex; align-items: center; justify-content: space-between; padding: 5px 0; }
-        .team-block { display: flex; align-items: center; gap: 10px; flex: 1; font-weight: bold; font-size: 15px; }
+        .team-block { display: flex; align-items: center; gap: 10px; flex: 1; font-weight: bold; }
         .team-block.right { flex-direction: row-reverse; text-align: right; }
-        .team-logo { width: 30px; height: 30px; object-fit: contain; }
-        .match-score { font-size: 20px; font-weight: 900; background: var(--bg-color); padding: 4px 12px; border-radius: 8px; border: 1px solid var(--border-color); }
-        .goal-scorers { font-size: 11px; color: var(--text-muted); text-align: center; }
-
-        /* Про-таблицы */
+        .team-logo { width: 25px; height: 25px; object-fit: contain; }
+        .match-score { font-size: 18px; font-weight: 900; background: var(--bg-color); padding: 4px 12px; border-radius: 8px; }
+        .goal-scorers { font-size: 11px; color: var(--text-muted); text-align: center; margin-top: 4px; }
         .pro-table { width: 100%; border-collapse: collapse; font-size: 13px; }
-        .pro-table th { color: var(--text-muted); font-weight: normal; padding: 10px 5px; border-bottom: 1px solid var(--border-color); }
+        .pro-table th { color: var(--text-muted); padding: 10px 5px; border-bottom: 1px solid var(--border-color); }
         .pro-table td { padding: 12px 5px; border-bottom: 1px solid var(--border-color); }
         .team-cell { display: flex; align-items: center; gap: 8px; font-weight: 600; }
-        .t-logo { width: 20px; height: 20px; object-fit: contain; }
-        .pro-table tr:nth-child(-n+4) td:first-child { color: var(--accent); font-weight: 900; }
-        
-        /* Всплывающий Тост */
-        #toast { visibility: hidden; min-width: 250px; background-color: var(--accent); color: #fff; text-align: center; border-radius: 8px; padding: 12px; position: fixed; z-index: 1000; left: 50%; bottom: 30px; transform: translateX(-50%); font-weight: bold; font-size: 14px; box-shadow: 0 4px 15px rgba(0,0,0,0.2); }
+        .t-logo { width: 18px; height: 18px; object-fit: contain; }
+        #toast { visibility: hidden; min-width: 250px; background-color: var(--accent); color: #fff; text-align: center; border-radius: 8px; padding: 12px; position: fixed; z-index: 1000; left: 50%; bottom: 30px; transform: translateX(-50%); font-weight: bold; }
         #toast.show { visibility: visible; animation: fadein 0.5s, fadeout 0.5s 2.5s; }
         @keyframes fadein { from { bottom: 0; opacity: 0; } to { bottom: 30px; opacity: 1; } }
         @keyframes fadeout { from { bottom: 30px; opacity: 1; } to { bottom: 0; opacity: 0; } }
-
     </style>
 </head>
 <body>
@@ -114,14 +93,10 @@
                         <span class="card-tag">{{item['tag']}}</span>
                         <h2 class="card-title">{{item['title']}}</h2>
                         <div class="card-desc">{{item['desc']}}</div>
-                        <div class="card-footer">
-                            <span>{{item['source']}}</span>
-                            <span style="color: var(--accent);">{{item['time']}}</span>
-                        </div>
                         <div class="interact-row">
                             <button class="react-btn" onclick="sendReaction('{{item['id']}}', 'like')">🔥 <span id="l-cnt-{{item['id']}}">{{item['likes']}}</span></button>
                             <button class="react-btn" onclick="sendReaction('{{item['id']}}', 'dislike')">👎 <span id="dl-cnt-{{item['id']}}">{{item['dislikes']}}</span></button>
-                            <a href="https://t.me/onetime_foot" target="_blank" class="react-btn" style="text-decoration:none; color:var(--accent);">В Телеграм ⚡</a>
+                            <a href="https://t.me/onetime_foot" target="_blank" class="react-btn" style="text-decoration:none; color:var(--accent);">В TG ⚡</a>
                         </div>
                     </div>
                 </div>
@@ -130,99 +105,46 @@
     </div>
 
     <div id="tab-matches" class="tab-content">
-        <div style="margin-bottom: 15px; color: var(--text-muted); font-size: 13px; text-align: center;">Матчи обновляются автоматически</div>
-        % for match in matches:
-            <div class="match-card">
-                <div class="match-header">
-                    <div class="league-info">
-                        % if match['league_img']:
-                            <img src="{{match['league_img']}}" class="league-logo">
-                        % end
-                        {{match['league']}}
-                    </div>
-                    <div class="status-badge {{'live' if 'LIVE' in match['status'] else ''}}">{{match['status']}}</div>
-                </div>
-                <div class="match-teams">
-                    <div class="team-block">
-                        <img src="{{match['home_img']}}" class="team-logo" onerror="this.style.display='none'">
-                        <span>{{match['home']}}</span>
-                    </div>
-                    <div class="match-score">{{match['score']}}</div>
-                    <div class="team-block right">
-                        <img src="{{match['away_img']}}" class="team-logo" onerror="this.style.display='none'">
-                        <span>{{match['away']}}</span>
-                    </div>
-                </div>
-                % if match['scorers']:
-                    <div class="goal-scorers">{{match['scorers']}}</div>
-                % end
-            </div>
-        % end
+        <div id="matches-load-box" class="matches-vertical-list">
+            <div style="text-align:center;color:var(--text-muted);padding:20px;">Загрузка живого центра матчей...</div>
+        </div>
     </div>
 
     <div id="tab-tables" class="tab-content">
         <div class="filter-panel" style="margin-bottom: 10px;">
-            <button class="filter-btn active" onclick="switchLeague('l-apl', this)">АПЛ</button>
-            <button class="filter-btn" onclick="switchLeague('l-la', this)">Ла Лига</button>
-            <button class="filter-btn" onclick="switchLeague('l-seria_a', this)">Серия А</button>
-            <button class="filter-btn" onclick="switchLeague('l-bunde', this)">Бундес</button>
+            <button class="filter-btn active" onclick="loadTableData('PL', this)">АПЛ</button>
+            <button class="filter-btn" onclick="loadTableData('PD', this)">Ла Лига</button>
+            <button class="filter-btn" onclick="loadTableData('SA', this)">Серия А</button>
+            <button class="filter-btn" onclick="loadTableData('BL1', this)">Бундес</button>
         </div>
-        
         <div style="background: var(--card-bg); border-radius: 12px; padding: 10px; border: 1px solid var(--border-color);">
-            % for league_key, team_list in t.items():
-                <div id="l-{{league_key}}" class="league-table-wrapper {{'active' if league_key == 'apl' else ''}}">
-                    <table class="pro-table">
-                        <thead><tr><th>#</th><th style="text-align:left;">Клуб</th><th>И</th><th>В</th><th>Н</th><th>П</th><th>Мячи</th><th>О</th></tr></thead>
-                        <tbody>
-                            % for team in team_list:
-                                <tr>
-                                    <td style="text-align:center;">{{team['pos']}}</td>
-                                    <td><div class="team-cell"><img src="{{team['crest']}}" class="t-logo" onerror="this.style.display='none'"> {{team['name']}}</div></td>
-                                    <td style="text-align:center;">{{team['games']}}</td>
-                                    <td style="text-align:center;">{{team['won']}}</td>
-                                    <td style="text-align:center;">{{team['draw']}}</td>
-                                    <td style="text-align:center;">{{team['lost']}}</td>
-                                    <td style="text-align:center; color: var(--text-muted);">{{team['goals']}}</td>
-                                    <td style="text-align:center; font-weight: bold;">{{team['points']}}</td>
-                                </tr>
-                            % end
-                        </tbody>
-                    </table>
-                </div>
-            % end
+            <table class="pro-table">
+                <thead><tr><th>#</th><th style="text-align:left;">Клуб</th><th>И</th><th>В</th><th>Н</th><th>П</th><th>Мячи</th><th>О</th></tr></thead>
+                <tbody id="table-body-async">
+                    <tr><td colspan="8" style="text-align:center;padding:20px;color:var(--text-muted);">Выберите лигу выше</td></tr>
+                </tbody>
+            </table>
         </div>
     </div>
 
     <div id="tab-scorers" class="tab-content">
         <div class="filter-panel" style="margin-bottom: 10px;">
-            <button class="filter-btn active" onclick="switchScorer('s-apl', this)">АПЛ</button>
-            <button class="filter-btn" onclick="switchScorer('s-la', this)">Ла Лига</button>
-            <button class="filter-btn" onclick="switchScorer('s-seria_a', this)">Серия А</button>
-            <button class="filter-btn" onclick="switchScorer('s-bunde', this)">Бундес</button>
+            <button class="filter-btn active" onclick="loadScorersData('PL', this)">АПЛ</button>
+            <button class="filter-btn" onclick="loadScorersData('PD', this)">Ла Лига</button>
+            <button class="filter-btn" onclick="loadScorersData('SA', this)">Серия А</button>
+            <button class="filter-btn" onclick="loadScorersData('BL1', this)">Бундес</button>
         </div>
         <div style="background: var(--card-bg); border-radius: 12px; padding: 10px; border: 1px solid var(--border-color);">
-            % for league_key, player_list in s.items():
-                <div id="s-{{league_key}}" class="league-table-wrapper {{'active' if league_key == 'apl' else ''}}">
-                    <table class="pro-table">
-                        <thead><tr><th style="text-align:left;">Игрок</th><th style="text-align:left;">Клуб</th><th>Голы</th><th>Голевые</th></tr></thead>
-                        <tbody>
-                            % for p in player_list:
-                                <tr>
-                                    <td style="font-weight: bold;">{{p['name']}}</td>
-                                    <td style="color: var(--text-muted); font-size: 11px;">{{p['team']}}</td>
-                                    <td style="text-align:center; color: var(--accent); font-weight:bold;">{{p['goals']}}</td>
-                                    <td style="text-align:center;">{{p['assists']}}</td>
-                                </tr>
-                            % end
-                        </tbody>
-                    </table>
-                </div>
-            % end
+            <table class="pro-table">
+                <thead><tr><th style="text-align:left;">Игрок</th><th style="text-align:left;">Клуб</th><th>Голы</th><th>Пасы</th></tr></thead>
+                <tbody id="scorers-body-async">
+                    <tr><td colspan="4" style="text-align:center;padding:20px;color:var(--text-muted);">Выберите лигу выше</td></tr>
+                </tbody>
+            </table>
         </div>
     </div>
 
     <div id="tab-favs" class="tab-content">
-        <div style="text-align: center; color: var(--accent); font-weight: bold; margin-bottom: 20px; font-size: 18px;">Ваши закладки 🔖</div>
         <div id="favs-container"></div>
     </div>
 
@@ -230,53 +152,104 @@
         let currentFilter = 'all';
         let savedBookmarks = JSON.parse(localStorage.getItem('bookmarks')) || [];
 
-        // Всплывающее окно (Toast)
         function showToast(msg) {
-            let t = document.getElementById("toast");
-            t.innerText = msg;
-            t.className = "show";
+            let t = document.getElementById("toast"); t.innerText = msg; t.className = "show";
             setTimeout(() => { t.className = t.className.replace("show", ""); }, 3000);
         }
 
-        // Логика Закладок
         function toggleBookmark(newsId, btn) {
             let idx = savedBookmarks.indexOf(newsId);
-            if (idx > -1) {
-                savedBookmarks.splice(idx, 1);
-                btn.classList.remove('saved');
-                showToast("Удалено из закладок");
-            } else {
-                savedBookmarks.push(newsId);
-                btn.classList.add('saved');
-                showToast("Сохранено в закладки ✅");
-            }
+            if (idx > -1) { savedBookmarks.splice(idx, 1); btn.classList.remove('saved'); showToast("Удалено"); }
+            else { savedBookmarks.push(newsId); btn.classList.add('saved'); showToast("Сохранено в закладки 🔖"); }
             localStorage.setItem('bookmarks', JSON.stringify(savedBookmarks));
             renderFavs();
         }
 
-        function initBookmarks() {
-            savedBookmarks.forEach(id => {
-                let btn = document.querySelector(`#news-${id} .bookmark-btn`);
-                if(btn) btn.classList.add('saved');
-            });
-        }
-
         function renderFavs() {
-            let container = document.getElementById('favs-container');
-            container.innerHTML = "";
-            if(savedBookmarks.length === 0) {
-                container.innerHTML = "<div style='text-align:center; color:var(--text-muted);'>Вы пока ничего не сохранили.</div>";
-                return;
-            }
+            let container = document.getElementById('favs-container'); container.innerHTML = "";
+            if(savedBookmarks.length === 0) { container.innerHTML = "<div style='text-align:center;padding:20px;color:var(--text-muted);'>Закладок пока нет.</div>"; return; }
             savedBookmarks.forEach(id => {
-                let origCard = document.getElementById(`news-${id}`);
-                if(origCard) {
-                    let clone = origCard.cloneNode(true);
-                    clone.classList.remove('hidden');
+                let orig = document.getElementById(`news-${id}`);
+                if(orig) {
+                    let clone = orig.cloneNode(true); clone.classList.remove('hidden');
                     clone.querySelector('.bookmark-btn').onclick = function() { toggleBookmark(id, this); };
                     container.appendChild(clone);
                 }
             });
+        }
+
+        async function loadMatchesData() {
+            try {
+                let res = await (await fetch('/api/matches')).json();
+                let html = res.map(m => `
+                    <div class="match-card">
+                        <div class="match-header">
+                            <div class="league-info">${m.league_img ? `<img src="${m.league_img}" class="league-logo">` : ''} ${m.league}</div>
+                            <div class="status-badge">${m.status}</div>
+                        </div>
+                        <div class="match-teams">
+                            <div class="team-block">${m.home_img ? `<img src="${m.home_img}" class="team-logo">` : ''} <span>${m.home}</span></div>
+                            <div class="match-score">${m.score}</div>
+                            <div class="team-block right">${m.away_img ? `<img src="${m.away_img}" class="team-logo">` : ''} <span>${m.away}</span></div>
+                        </div>
+                        ${m.scorers ? `<div class="goal-scorers">${m.scorers}</div>` : ''}
+                    </div>
+                `).join('');
+                document.getElementById('matches-load-box').innerHTML = html || '<div style="text-align:center;padding:20px;">Матчей нет</div>';
+            } catch(e) {}
+        }
+
+        async function loadTableData(code, btn) {
+            if(btn) {
+                document.querySelectorAll('#tab-tables .filter-btn').forEach(b => b.classList.remove('active'));
+                btn.classList.add('active');
+            }
+            document.getElementById('table-body-async').innerHTML = '<tr><td colspan="8" style="text-align:center;padding:20px;color:var(--text-muted);">Загрузка таблицы лиги...</td></tr>';
+            try {
+                let res = await (await fetch('/api/tables/' + code)).json();
+                document.getElementById('table-body-async').innerHTML = res.map(t => `
+                    <tr>
+                        <td style="text-align:center;font-weight:bold;color:var(--accent);">${t.pos}</td>
+                        <td><div class="team-cell">${t.crest ? `<img src="${t.crest}" class="t-logo">` : ''} ${t.name}</div></td>
+                        <td style="text-align:center;">${t.games}</td>
+                        <td style="text-align:center;">${t.won}</td>
+                        <td style="text-align:center;">${t.draw}</td>
+                        <td style="text-align:center;">${t.lost}</td>
+                        <td style="text-align:center;color:var(--text-muted);">${t.goals}</td>
+                        <td style="text-align:center;font-weight:bold;">${t.points}</td>
+                    </tr>
+                `).join('');
+            } catch(e) {}
+        }
+
+        async function loadScorersData(code, btn) {
+            if(btn) {
+                document.querySelectorAll('#tab-scorers .filter-btn').forEach(b => b.classList.remove('active'));
+                btn.classList.add('active');
+            }
+            document.getElementById('scorers-body-async').innerHTML = '<tr><td colspan="4" style="text-align:center;padding:20px;color:var(--text-muted);">Загрузка топ-страйкеров...</td></tr>';
+            try {
+                let res = await (await fetch('/api/scorers/' + code)).json();
+                document.getElementById('scorers-body-async').innerHTML = res.map(s => `
+                    <tr>
+                        <td style="font-weight:bold;">${s.name}</td>
+                        <td style="color:var(--text-muted);font-size:11px;">${s.team}</td>
+                        <td style="text-align:center;color:var(--accent);font-weight:bold;">${s.goals}</td>
+                        <td style="text-align:center;">${s.assists}</td>
+                    </tr>
+                `).join('');
+            } catch(e) {}
+        }
+
+        function switchTab(id, btn) {
+            document.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'));
+            document.getElementById(id).classList.add('active');
+            document.querySelectorAll('.nav-tab-btn').forEach(b => b.classList.remove('active'));
+            btn.classList.add('active');
+            if(id === 'tab-matches') loadMatchesData();
+            if(id === 'tab-tables') loadTableData('PL');
+            if(id === 'tab-scorers') loadScorersData('PL');
+            if(id === 'tab-favs') renderFavs();
         }
 
         function liveSearch() {
@@ -284,37 +257,41 @@
             document.querySelectorAll('#tab-news .card').forEach(card => {
                 let text = card.innerText.toLowerCase();
                 let tag = card.getAttribute('data-tag').toLowerCase();
-                let mF = (currentFilter === 'all' || tag === currentFilter);
-                if (mF && text.includes(query)) card.classList.remove('hidden');
+                if ((currentFilter === 'all' || tag === currentFilter) && text.includes(query)) card.classList.remove('hidden');
                 else card.classList.add('hidden');
             });
         }
 
+        function filterNews(tag, btn) {
+            currentFilter = tag;
+            document.querySelectorAll('#tab-news .filter-btn').forEach(b => b.classList.remove('active'));
+            btn.classList.add('active'); liveSearch();
+        }
+
         function toggleTheme() {
             let nT = document.body.getAttribute('data-theme') === 'light' ? 'dark' : 'light';
-            document.body.setAttribute('data-theme', nT);
-            localStorage.setItem('theme', nT);
+            document.body.setAttribute('data-theme', nT); localStorage.setItem('theme', nT);
             document.getElementById('theme-btn').innerText = nT === 'light' ? '🌙 Ночь' : '☀️ День';
+        }
+
+        async function sendReaction(id, type) {
+            let fd = new FormData(); fd.append('news_id', id); fd.append('type', type);
+            try {
+                let res = await (await fetch('/api/reaction', { method: 'POST', body: fd })).json();
+                if(res.status === 'success') {
+                    document.getElementById('l-cnt-'+id).innerText = res.likes;
+                    document.getElementById('dl-cnt-'+id).innerText = res.dislikes;
+                    showToast("Оценка сохранена!");
+                }
+            } catch(e) {}
         }
 
         window.addEventListener('DOMContentLoaded', () => {
             let sT = localStorage.getItem('theme') || 'dark';
             document.body.setAttribute('data-theme', sT);
             document.getElementById('theme-btn').innerText = sT === 'light' ? '🌙 Ночь' : '☀️ День';
-            initBookmarks();
-            renderFavs();
+            savedBookmarks.forEach(id => { let b = document.querySelector(`#news-${id} .bookmark-btn`); if(b) b.classList.add('saved'); });
         });
-
-        function switchTab(id, btn) {
-            document.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'));
-            document.getElementById(id).classList.add('active');
-            document.querySelectorAll('.nav-tab-btn').forEach(b => b.classList.remove('active'));
-            btn.classList.add('active');
-            if(id === 'tab-favs') renderFavs();
-        }
-
-        function switchLeague(id, btn) {
-            document.querySelectorAll('#tab-tables .league-table-wrapper').forEach(w => w.classList.remove('active'));
-            document.getElementById(id).classList.add('active');
-            document.querySelectorAll('#tab-tables .filter-btn').forEach(b => b.classList.remove('active'));
-            btn.classLi
+    </script>
+</body>
+</html>
