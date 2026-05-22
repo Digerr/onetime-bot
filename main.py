@@ -1,15 +1,39 @@
+# -*- coding: utf-8 -*-
 import os
 import sqlite3
 import json
 import requests
-from bottle import route, run, static_file, response
+from bottle import route, run, template, static_file, response
+from dotenv import load_dotenv
+
+load_dotenv()
 
 DB_NAME = "bot_v25.db"
 FOOTBALL_API_KEY = os.getenv("FOOTBALL_API_KEY", "")
 
 @route('/')
 def index():
-    return static_file('index.html', root='.')
+    try:
+        conn = sqlite3.connect(DB_NAME)
+        cursor = conn.cursor()
+        cursor.execute("SELECT url, title, description, source, tag, image_url, published FROM posted_news ORDER BY id DESC LIMIT 20")
+        rows = cursor.fetchall()
+        conn.close()
+
+        news = []
+        for r in rows:
+            news.append({
+                "id": str(abs(hash(r[0]))),
+                "title": r[1],
+                "desc": r[2] or "",
+                "source": r[3],
+                "tag": r[4] or "#Футбол",
+                "image": r[5] or "https://images.unsplash.com/photo-1508098682722-e99c43a406b2",
+                "time": r[6].split()[1][:5] if r[6] else "Свежая"
+            })
+        return template('index.html', news=news)
+    except Exception as e:
+        return f"Ошибка: {e}"
 
 @route('/api/news')
 def get_news():
@@ -47,7 +71,7 @@ def get_matches():
             league_img = m["competition"].get("emblem", "")
             matches.append({"home": home, "away": away, "home_img": home_img, "away_img": away_img, "score": score, "status": status, "league": league, "league_img": league_img, "scorers": ""})
         return json.dumps(matches, ensure_ascii=False)
-    except Exception as e:
+    except:
         return json.dumps([])
 
 @route('/api/tables/<code>')
@@ -63,14 +87,14 @@ def get_table(code):
         for t in data["standings"][0]["table"]:
             table.append({"pos": t["position"], "name": t["team"]["name"], "crest": t["team"].get("crest",""), "games": t["playedGames"], "won": t["won"], "draw": t["draw"], "lost": t["lost"], "points": t["points"]})
         return json.dumps(table, ensure_ascii=False)
-    except Exception as e:
+    except:
         return json.dumps([])
 
 @route('/api/scorers/<code>')
 def get_scorers(code):
     response.content_type = 'application/json; charset=utf-8'
     try:
-        league_ids = {"PL": 2021, "PD": 2014, "SA": 2019, "BL1": 2002}
+        league_ids = {"PL": 2021, "PD": 2014, "SA": 2019, "BL1": 2002, "FL1": 2015}
         lid = league_ids.get(code, 2021)
         headers = {"X-Auth-Token": FOOTBALL_API_KEY}
         res = requests.get(f"https://api.football-data.org/v4/competitions/{lid}/scorers?limit=10", headers=headers, timeout=8)
@@ -79,7 +103,7 @@ def get_scorers(code):
         for s in data.get("scorers", []):
             result.append({"name": s["player"]["name"], "team": s["team"]["name"], "goals": s.get("goals", 0), "assists": s.get("assists", 0) or 0})
         return json.dumps(result, ensure_ascii=False)
-    except Exception as e:
+    except:
         return json.dumps([])
 
 @route('/<filename:path>')
@@ -87,4 +111,9 @@ def server_static(filename):
     return static_file(filename, root='.')
 
 if __name__ == "__main__":
+    if not os.path.exists('views'):
+        os.makedirs('views')
+    if os.path.exists('index.html') and not os.path.exists('views/index.html'):
+        import shutil
+        shutil.copy('index.html', 'views/index.html')
     run(host='0.0.0.0', port=int(os.environ.get("PORT", 8080)))
