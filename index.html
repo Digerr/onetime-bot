@@ -5,26 +5,35 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>ВАН-ТАЙМ</title>
     <style>
-        :root { --bg: #0a0e14; --card: #12181f; --text: #e0e0e0; --accent: #00ff88; }
+        :root { --bg: #0a0e14; --card: #12181f; --text: #e0e0e0; --accent: #00ff88; --muted: #8a8f9c; }
         * { margin:0; padding:0; box-sizing:border-box; }
-        body { background: var(--bg); color: var(--text); font-family: system-ui, sans-serif; }
-        .header { background: #0a0e14; padding: 15px; text-align: center; font-size: 22px; font-weight: 900; color: var(--accent); }
-        .live-bar { background: #1a1f2e; padding: 10px; text-align: center; font-weight: bold; color: #00ff88; }
-        .tab-bar { display: flex; background: #12181f; position: sticky; top: 0; z-index: 100; }
-        .tab { flex: 1; padding: 15px; text-align: center; font-weight: 600; }
-        .tab.active { border-bottom: 3px solid var(--accent); color: var(--accent); }
+        body { background: var(--bg); color: var(--text); font-family: system-ui, -apple-system, sans-serif; }
+        .header { background: #0a0e14; padding: 15px 20px; display: flex; align-items: center; gap: 10px; font-size: 24px; font-weight: 900; color: var(--accent); }
+        .live-bar { background: #1a222f; padding: 8px 20px; font-weight: 700; display: flex; align-items: center; gap: 8px; color: var(--accent); }
+        .tab-bar { display: flex; background: #12181f; position: sticky; top: 0; z-index: 100; border-bottom: 1px solid #1f2837; }
+        .tab { flex: 1; padding: 16px 10px; text-align: center; font-weight: 700; font-size: 15px; color: var(--muted); }
+        .tab.active { color: var(--accent); border-bottom: 3px solid var(--accent); }
         .content { padding: 15px; max-width: 640px; margin: 0 auto; }
-        .match-card { background: var(--card); border-radius: 12px; padding: 15px; margin-bottom: 12px; display: flex; align-items: center; justify-content: space-between; }
+        .match-card { background: var(--card); border-radius: 12px; padding: 15px; margin-bottom: 12px; }
+        .match-header { display: flex; justify-content: space-between; font-size: 13px; color: var(--muted); margin-bottom: 8px; }
+        .match-teams { display: flex; justify-content: space-between; align-items: center; }
         .team { display: flex; align-items: center; gap: 10px; font-weight: 600; }
+        .team-logo { width: 32px; height: 32px; object-fit: contain; }
         .score { font-size: 28px; font-weight: 900; color: var(--accent); }
         .news-card { background: var(--card); border-radius: 12px; overflow: hidden; margin-bottom: 15px; }
-        .news-img { width: 100%; height: 180px; object-fit: cover; }
+        .news-img { width: 100%; height: 190px; object-fit: cover; }
         .news-body { padding: 15px; }
+        .news-tag { color: var(--accent); font-size: 13px; font-weight: 700; }
+        .empty { text-align: center; padding: 80px 20px; color: var(--muted); }
     </style>
 </head>
 <body>
-    <div class="header">⚽ ВАН-ТАЙМ</div>
-    <div class="live-bar">🔴 LIVE • 8 матчей сейчас</div>
+    <div class="header">
+        <span>⚽</span> ВАН-ТАЙМ
+    </div>
+    <div class="live-bar">
+        🔴 LIVE • <span id="live-count">8</span> матчей сейчас
+    </div>
 
     <div class="tab-bar">
         <div class="tab active" onclick="switchTab(0)">LIVE</div>
@@ -34,35 +43,56 @@
     </div>
 
     <div class="content" id="content">
-        <!-- сюда будет подгружаться контент через JS -->
+        <!-- JS будет подгружать контент сюда -->
     </div>
 
     <script>
-        async function loadNews() {
-            const res = await fetch('/api/news');
-            const data = await res.json();
-            let html = data.map(n => `
-                <div class="news-card">
-                    <img class="news-img" src="${n.image}" onerror="this.style.display='none'">
-                    <div class="news-body">
-                        <small>${n.tag} • ${n.time}</small>
-                        <h3>${n.title}</h3>
-                        <p>${n.desc}</p>
+        async function loadLive() {
+            const res = await fetch('/api/matches');
+            const matches = await res.json();
+            let html = matches.map(m => `
+                <div class="match-card">
+                    <div class="match-header">
+                        <span>${m.league}</span>
+                        <span>${m.status}</span>
+                    </div>
+                    <div class="match-teams">
+                        <div class="team"><img src="\( {m.home_img}" class="team-logo" onerror="this.style.display='none'"><span> \){m.home}</span></div>
+                        <div class="score">${m.score}</div>
+                        <div class="team"><span>\( {m.away}</span><img src=" \){m.away_img}" class="team-logo" onerror="this.style.display='none'"></div>
                     </div>
                 </div>
             `).join('');
-            document.getElementById('content').innerHTML = html || '<p style="text-align:center;color:#666;padding:50px;">Новостей пока нет</p>';
+            document.getElementById('content').innerHTML = html || '<div class="empty">Матчей нет</div>';
+        }
+
+        async function loadNews() {
+            const res = await fetch('/api/news');
+            const news = await res.json();
+            let html = news.map(n => `
+                <div class="news-card">
+                    <img class="news-img" src="${n.image}" onerror="this.style.display='none'">
+                    <div class="news-body">
+                        <div class="news-tag">${n.tag} • ${n.time}</div>
+                        <h3 style="margin:10px 0 8px">${n.title}</h3>
+                        <p style="color:var(--muted); font-size:14px;">${n.desc}</p>
+                    </div>
+                </div>
+            `).join('');
+            document.getElementById('content').innerHTML = html || '<div class="empty">Новостей пока нет</div>';
         }
 
         function switchTab(n) {
-            document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
-            document.querySelectorAll('.tab')[n].classList.add('active');
+            document.querySelectorAll('.tab').forEach((t, i) => t.classList.toggle('active', i === n));
+            if (n === 0) loadLive();
             if (n === 3) loadNews();
-            // можно добавить другие табы позже
+            // можно добавить таблицы и расписание позже
         }
 
-        // первый запуск
-        window.onload = () => loadNews();
+        // Первый запуск
+        window.onload = () => {
+            loadLive(); // по умолчанию показываем LIVE
+        };
     </script>
 </body>
 </html>
