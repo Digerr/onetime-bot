@@ -37,7 +37,8 @@
         <div class="tab active" onclick="switchTab(0)">LIVE</div>
         <div class="tab" onclick="switchTab(1)">МАТЧИ</div>
         <div class="tab" onclick="switchTab(2)">ТАБЛИЦЫ</div>
-        <div class="tab" onclick="switchTab(3)">НОВОСТИ</div>
+        <div class="tab" onclick="switchTab(3)">ТОП-10</div>
+        <div class="tab" onclick="switchTab(4)">НОВОСТИ</div>
     </div>
 
     <div class="content" id="content"></div>
@@ -98,10 +99,14 @@
             currentTab = n;
             document.querySelectorAll('.tab').forEach((t,i) => t.classList.toggle('active', i===n));
             if (n === 0) loadLive();
-            if (n === 3) loadNews();
+            if (n === 4) loadNews();
         }
 
-        setInterval(() => { if (currentTab === 0) loadLive(); if (currentTab === 3) loadNews(); }, 40000);
+        setInterval(() => {
+            if (currentTab === 0) loadLive();
+            if (currentTab === 4) loadNews();
+        }, 40000);
+
         window.onload = loadLive;
     </script>
 </body>
