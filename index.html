@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>ВАН-ТАЙМ | Спортивная Платформа</title>
+    <title>ВАН-ТАЙМ</title>
     <style>
         :root {
             --bg-color: #000000; --card-bg: #121212; --text-color: #ffffff; --text-muted: #8e8e93;
@@ -11,7 +11,7 @@
             --bottom-nav-bg: rgba(18, 18, 18, 0.9); --glass-border: rgba(255, 255, 255, 0.1);
         }
         * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; margin: 0; padding: 0; }
-        body { background-color: var(--bg-color); color: var(--text-color); font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; padding-bottom: 90px; user-select: none; }
+        body { background-color: var(--bg-color); color: var(--text-color); font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; padding-bottom: 90px; }
         
         .top-bar { position: sticky; top: 0; z-index: 100; background: var(--bg-color); padding: 15px 20px; display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid var(--border-color); }
         .header { color: var(--accent); font-size: 22px; font-weight: 900; letter-spacing: -0.5px; }
@@ -24,7 +24,7 @@
         
         .chips-wrapper { overflow-x: auto; white-space: nowrap; padding-bottom: 10px; margin-bottom: 15px; scrollbar-width: none; display: flex; gap: 8px; }
         .chips-wrapper::-webkit-scrollbar { display: none; }
-        .filter-btn { background: var(--card-bg); color: var(--text-muted); border: 1px solid var(--border-color); padding: 8px 16px; border-radius: 20px; cursor: pointer; font-size: 13px; font-weight: 600; outline: none; border: 1px solid var(--border-color); }
+        .filter-btn { background: var(--card-bg); color: var(--text-muted); border: 1px solid var(--border-color); padding: 8px 16px; border-radius: 20px; cursor: pointer; font-size: 13px; font-weight: 600; outline: none; }
         .filter-btn.active { background: var(--accent); color: #000; border-color: var(--accent); }
 
         .news-container { display: flex; flex-direction: column; gap: 15px; }
@@ -104,7 +104,7 @@
         </div>
         <div style="background: var(--card-bg); border-radius: 16px; padding: 10px; border: 1px solid var(--border-color); overflow-x: auto;">
             <table class="pro-table">
-                <thead><tr><th>#</th><th style="text-align:left;">Клуб</th><th>И</th><th>В</th><th>Н</th><th>П</th><th>О</th></tr></thead>
+                <thead><tr><th>#</th><th style="text-align:left;">Club</th><th>И</th><th>В</th><th>Н</th><th>П</th><th>О</th></tr></thead>
                 <tbody id="table-body-async"></tbody>
             </table>
         </div>
