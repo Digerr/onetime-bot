@@ -1,1 +1,1 @@
-worker: python football_final.py
+web: python main.py
