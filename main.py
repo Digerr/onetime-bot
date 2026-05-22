@@ -6,8 +6,9 @@ import sqlite3
 import json
 from bottle import route, run, template, response, request
 from datetime import datetime, timedelta
+from deep_translator import GoogleTranslator
 
-# Твой проверенный API-ключ
+# Твой рабочий API-ключ
 API_KEY = "c7c58272f8b84c73b73483d15a3a8b03" 
 
 DB_NAME = "bot_v25.db"
@@ -35,16 +36,15 @@ def init_extended_db():
     conn.close()
 
 def get_live_matches_365():
-    """Расширенный сборщик матчей: ищет игры в радиусе 3 дней, чтобы центр LIVE никогда не пустовал"""
+    """Сборщик матчей на сегодня уровня 365scores с автопереводом клубов на русский"""
     headers = {'X-Auth-Token': API_KEY}
     live_matches = []
+    translator = GoogleTranslator(source='auto', target='ru')
     
-    # Берем окно: вчера, сегодня, завтра
     date_from = (datetime.now() - timedelta(days=1)).strftime('%Y-%m-%d')
     date_to = (datetime.now() + timedelta(days=2)).strftime('%Y-%m-%d')
     
     try:
-        # Запрашиваем матчи в широком диапазоне дат
         url = f"https://api.football-data.org/v4/matches?dateFrom={date_from}&dateTo={date_to}"
         res = requests.get(url, headers=headers, timeout=6)
         if res.status_code == 200:
@@ -52,9 +52,17 @@ def get_live_matches_365():
             matches_list = data.get('matches', [])
             
             if matches_list:
-                for m in matches_list[:20]: # Показываем до 20 матчей в списке
+                for m in matches_list[:20]:
                     home_team = m['homeTeam']['name']
                     away_team = m['awayTeam']['name']
+                    
+                    # Переводим названия клубов на русский язык
+                    try:
+                        home_team_ru = translator.translate(home_team)
+                        away_team_ru = translator.translate(away_team)
+                    except:
+                        home_team_ru = home_team
+                        away_team_ru = away_team
                     
                     home_score = m['score']['fullTime']['home'] if m['score']['fullTime']['home'] is not None else 0
                     away_score = m['score']['fullTime']['away'] if m['score']['fullTime']['away'] is not None else 0
@@ -65,7 +73,6 @@ def get_live_matches_365():
                     elif raw_status == 'FINISHED':
                         status = "Завершен"
                     else:
-                        # Красиво форматируем дату и время старта
                         try:
                             match_date = m['utcDate'].split('T')[0].split('-')[2]
                             match_time = m['utcDate'].split('T')[1][:5]
@@ -74,7 +81,7 @@ def get_live_matches_365():
                             status = "Скоро"
 
                     live_matches.append({
-                        "teams": f"{home_team} {home_score} : {away_score} {away_team}",
+                        "teams": f"{home_team_ru} {home_score} : {away_score} {away_team_ru}",
                         "status": status,
                         "league": m['competition']['name']
                     })
