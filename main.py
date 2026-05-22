@@ -2,20 +2,18 @@ import os
 import subprocess
 import threading
 import requests
-from bottle import route, run, template
+from bottle import route, run, template, response
 
 DB_NAME = "bot_v25.db"
 
 def get_today_matches():
-    """Надежный сборщик реальных матчей на сегодня из открытого спортивного API"""
+    """Сборщик реальных матчей на сегодня"""
     matches = []
     try:
-        # Запрашиваем данные о сегодняшних играх (используем стабильное открытое спортивное зеркало)
         url = "https://www.scorebat.com/video-api/v3/"
-        response = requests.get(url, timeout=5, headers={"User-Agent": "Mozilla/5.0"})
-        if response.status_code == 200:
-            data = response.json()
-            # Берем первые 8 матчей, которые идут прямо сейчас или запланированы
+        res = requests.get(url, timeout=5, headers={"User-Agent": "Mozilla/5.0"})
+        if res.status_code == 200:
+            data = res.json()
             for item in data.get('response', [])[:8]:
                 title = item.get('title', '')
                 if " - " in title:
@@ -23,7 +21,6 @@ def get_today_matches():
     except Exception:
         pass
     
-    # Если в межсезонье матчей совсем нет, покажем нейтральное расписание турниров
     if not matches:
         matches = [
             {"teams": "Матчи лиг появятся перед началом туров"},
@@ -31,13 +28,14 @@ def get_today_matches():
         ]
     return matches
 
-@route('/')
-def index():
+def fetch_news_from_db():
+    """Вспомогательная функция для чтения новостей из БД"""
     import sqlite3
     conn = sqlite3.connect(DB_NAME)
     cursor = conn.cursor()
     try:
-        cursor.execute("SELECT title, description, source, tag, image_url FROM posted_news ORDER BY id DESC LIMIT 40")
+        # Достаем еще и время публикации (published)
+        cursor.execute("SELECT title, description, source, tag, image_url, published FROM posted_news ORDER BY id DESC LIMIT 40")
         rows = cursor.fetchall()
     except sqlite3.OperationalError:
         rows = []
@@ -48,18 +46,46 @@ def index():
         if r[0] and r[1]:
             img = r[4] if (len(r) > 4 and r[4]) else "https://images.unsplash.com/photo-1508098682722-e99c43a406b2?w=500"
             tag = r[3] if (len(r) > 3 and r[3]) else "#Футбол"
-            news_data.append({"title": r[0], "desc": r[1], "source": r[2], "tag": tag, "image": img})
-    
+            
+            # Красиво форматируем время (берём только Часы:Минуты из таймштампа)
+            time_str = "00:00"
+            if len(r) > 5 and r[5]:
+                try:
+                    # Обычно время в БД лежит как 'YYYY-MM-DD HH:MM:SS'
+                    time_str = r[5].split()[1][:5]
+                except Exception:
+                    time_str = "Свежая"
+
+            news_data.append({
+                "title": r[0], 
+                "desc": r[1], 
+                "source": r[2], 
+                "tag": tag, 
+                "image": img,
+                "time": time_str
+            })
+    return news_data
+
+@route('/api/news')
+def api_news():
+    """Секретный эндпоинт: отдает новости в формате JSON для автообновления сайта"""
+    import json
+    response.content_type = 'application/json; charset=UTF-8'
+    return json.dumps(fetch_news_from_db(), ensure_ascii=False)
+
+@route('/')
+def index():
+    news_data = fetch_news_from_db()
     if not news_data:
         news_data = [{
             "title": "Лента «ВАН-ТАЙМ» обновляется", 
             "desc": "Бот собирает свежие футбольные инсайды. Загляните через пару минут!", 
             "source": "Система",
             "tag": "#Футбол",
-            "image": "https://images.unsplash.com/photo-1508098682722-e99c43a406b2?w=500"
+            "image": "https://images.unsplash.com/photo-1508098682722-e99c43a406b2?w=500",
+            "time": "Сейчас"
         }]
 
-    # Загружаем только реальные матчи дня
     matches_today = get_today_matches()
 
     html_page = """
@@ -87,22 +113,32 @@ def index():
             
             /* Сетка карточек */
             .news-container { display: flex; flex-direction: column; gap: 20px; max-width: 600px; margin: 0 auto; }
-            .card { background-color: #1e1e1e; border-radius: 12px; overflow: hidden; box-shadow: 0 4px 15px rgba(0,0,0,0.5); border-bottom: 4px solid #2ecc71; transition: transform 0.2s; }
+            .card { background-color: #1e1e1e; border-radius: 12px; overflow: hidden; box-shadow: 0 4px 15px rgba(0,0,0,0.5); border-bottom: 4px solid #2ecc71; transition: all 0.3s ease; position: relative; }
             .card.hidden { display: none; }
             .card-img { width: 100%; height: 200px; object-fit: cover; }
             .card-body { padding: 15px; }
-            .card-tag { display: inline-block; background-color: rgba(46, 204, 113, 0.1); color: #2ecc71; padding: 3px 8px; border-radius: 4px; font-size: 11px; font-weight: bold; margin-bottom: 10px; }
+            .card-header-row { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
+            .card-tag { display: inline-block; background-color: rgba(46, 204, 113, 0.1); color: #2ecc71; padding: 3px 8px; border-radius: 4px; font-size: 11px; font-weight: bold; }
+            
+            /* Кнопка Телеграм */
+            .tg-link-btn { background-color: #2481cc; color: white; border: none; padding: 4px 10px; border-radius: 12px; font-size: 11px; font-weight: bold; cursor: pointer; text-decoration: none; transition: background 0.2s; }
+            .tg-link-btn:hover { background-color: #1a66a4; }
+            
             .card-title { color: #ffffff; font-size: 19px; font-weight: bold; margin: 0 0 10px 0; line-height: 1.3; }
             .card-desc { color: #cccccc; font-size: 14px; line-height: 1.5; margin-bottom: 12px; }
             .card-footer { display: flex; justify-content: space-between; color: #666; font-size: 12px; font-style: italic; border-top: 1px solid #2a2a2a; padding-top: 10px; }
+            .card-time { color: #2ecc71; font-weight: bold; }
             
             .footer { text-align: center; color: #444; font-size: 12px; margin-top: 40px; padding-bottom: 20px; }
         </style>
         <script>
+            let currentFilter = 'all';
+
             function filterNews(tag, button) {
+                currentFilter = tag;
                 let buttons = document.querySelectorAll('.filter-btn');
                 buttons.forEach(btn => btn.classList.remove('active'));
-                button.classList.add('active');
+                if(button) button.classList.add('active');
                 
                 let cards = document.querySelectorAll('.card');
                 cards.forEach(card => {
@@ -113,6 +149,44 @@ def index():
                     }
                 });
             }
+
+            // УМНОЕ АВТООБНОВЛЕНИЕ БЕЗ ПЕРЕЗАГРУЗКИ СТРАНИЦЫ (Каждые 30 секунд)
+            async function checkNewNews() {
+                try {
+                    let response = await fetch('/api/news');
+                    let news = await response.json();
+                    let container = document.querySelector('.news-container');
+                    
+                    // Очищаем и пересобираем ленту налету
+                    let html = '';
+                    news.forEach(item => {
+                        let isHidden = (currentFilter === 'all' || item.tag === currentFilter) ? '' : ' hidden';
+                        html += `
+                            <div class="card${isHidden}" data-tag="${item.tag}">
+                                <img class="card-img" src="${item.image}" alt="news-img" onerror="this.src='https://images.unsplash.com/photo-1508098682722-e99c43a406b2?w=500'">
+                                <div class="card-body">
+                                    <div class="card-header-row">
+                                        <span class="card-tag">${item.tag}</span>
+                                        <a href="https://t.me/onetime_foot" target="_blank" class="tg-link-btn">Читать в TG ⚡</a>
+                                    </div>
+                                    <h2 class="card-title">${item.title}</h2>
+                                    <div class="card-desc">${item.desc}</div>
+                                    <div class="card-footer">
+                                        <span>Источник: ${item.source}</span>
+                                        <span class="card-time">🕒 ${item.time}</span>
+                                    </div>
+                                </div>
+                            </div>
+                        `;
+                    });
+                    container.innerHTML = html;
+                } catch (e) {
+                    console.log("Ошибка обновления ленты", e);
+                }
+            }
+
+            // Включаем таймер опроса базы
+            setInterval(checkNewNews, 30000);
         </script>
     </head>
     <body>
@@ -141,11 +215,15 @@ def index():
                 <div class="card" data-tag="{{item['tag']}}">
                     <img class="card-img" src="{{item['image']}}" alt="news-img" onerror="this.src='https://images.unsplash.com/photo-1508098682722-e99c43a406b2?w=500'">
                     <div class="card-body">
-                        <span class="card-tag">{{item['tag']}}</span>
+                        <div class="card-header-row">
+                            <span class="card-tag">{{item['tag']}}</span>
+                            <a href="https://t.me/onetime_foot" target="_blank" class="tg-link-btn">Читать в TG ⚡</a>
+                        </div>
                         <h2 class="card-title">{{item['title']}}</h2>
                         <div class="card-desc">{{item['desc']}}</div>
                         <div class="card-footer">
                             <span>Источник: {{item['source']}}</span>
+                            <span class="card-time">🕒 {{item['time']}}</span>
                         </div>
                     </div>
                 </div>
