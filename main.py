@@ -79,11 +79,6 @@ def fetch_news_from_db():
             })
     return news_data
 
-@route('/api/news')
-def api_news():
-    response.content_type = 'application/json; charset=UTF-8'
-    return json.dumps(fetch_news_from_db(), ensure_ascii=False)
-
 @route('/api/comments/add', method='POST')
 def add_comment():
     news_id = request.forms.get('news_id')
@@ -180,7 +175,6 @@ def index():
         .footer { text-align: center; color: #444; font-size: 12px; margin-top: 40px; padding-bottom: 20px; }
     </style>
     <script>
-        let currentFilter = 'all';
         function switchTab(tabId, button) {
             let tabs = document.querySelectorAll('.tab-content');
             tabs.forEach(tab => tab.classList.remove('active'));
@@ -198,7 +192,6 @@ def index():
             button.classList.add('active');
         }
         function filterNews(tag, button) {
-            currentFilter = tag;
             let buttons = document.querySelectorAll('.filter-btn');
             buttons.forEach(btn => btn.classList.remove('active'));
             if(button) button.classList.add('active');
@@ -245,20 +238,11 @@ def index():
             textInput.value = '';
             loadComments(newsId);
         }
-        async function checkNewNews() {
-            try {
-                let response = await fetch('/api/news');
-                let news = await response.json();
-                let container = document.querySelector('.news-container');
-                let html = '';
-                news.forEach(item => {
-                    let isHidden = (currentFilter === 'all' || item.tag === currentFilter) ? '' : ' hidden';
-                    html += '<div class="card' + isHidden + '" data-tag="' + item.tag + '"><img class="card-img" src="' + item.image + '" onerror="this.src=\\'https://images.unsplash.com/photo-1508098682722-e99c43a406b2?w=500\\'"><div class="card-body"><div class="card-header-row"><span class="card-tag">' + item.tag + '</span><a href="https://t.me/onetime_foot" target="_blank" class="tg-link-btn">Читать в TG ⚡</a></div><h2 class="card-title">' + item.title + '</h2><div class="card-desc">' + item.desc + '</div><div class="card-footer"><span>Источник: ' + item.source + '</span><span class="card-time">🕒 ' + item.time + '</span></div><button class="comment-toggle-btn" onclick="toggleComments(\\'' + item.id + '\\')">💬 Комментарии</button></div><div class="comments-box" id="box-' + item.id + '"><div class="comments-list" id="list-' + item.id + '"></div><div style="margin-bottom:6px;"><input type="text" class="comment-input" id="name-' + item.id + '" placeholder="Имя" style="width:140px; margin-bottom:4px;"></div><div class="comment-input-row"><input type="text" class="comment-input" id="text-' + item.id + '" placeholder="Напишите комментарий..."><button class="comment-btn" onclick="sendComment(\\'' + item.id + '\\')">Отправить</button></div></div></div>';
-                });
-                container.innerHTML = html;
-            } catch (e) {}
-        }
-        setInterval(checkNewNews, 30000);
+        
+        // Надежное автообновление страницы раз в 60 секунд без зависания кавычек
+        setInterval(function() {
+            window.location.reload();
+        }, 60000);
     </script>
 </head>
 <body>
@@ -354,4 +338,31 @@ def index():
                 </table>
             </div>
 
-            <div id="l
+            <div id="l-laliga" class="league-table-wrapper">
+                <table class="league-table">
+                    <thead><tr><th>#</th><th>Команда</th><th>И</th><th>О</th></tr></thead>
+                    <tbody>
+                        <tr><td>1</td><td>Реал Мадрид</td><td>38</td><td>95</td></tr>
+                        <tr><td>2</td><td>Барселона</td><td>38</td><td>85</td></tr>
+                        <tr><td>3</td><td>Жирона</td><td>38</td><td>81</td></tr>
+                        <tr><td>4</td><td>Атлетико</td><td>38</td><td>76</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+    
+    <div class="footer">ВАН-ТАЙМ Спортивный Медиа-Хаб 2026</div>
+</body>
+</html>"""
+    return template(html_page, news=news_data, matches=matches_today)
+
+def start_bot():
+    subprocess.Popen(["python", "football_final.py"])
+
+if __name__ == "__main__":
+    init_comments_db()
+    threading.Thread(target=start_bot, daemon=True).start()
+    port = int(os.environ.get("PORT", 8080))
+    run(host='0.0.0.0', port=port)
+    
