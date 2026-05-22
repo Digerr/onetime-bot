@@ -6,6 +6,9 @@ import sqlite3
 import json
 from bottle import route, run, template, response, request
 
+# Твой вшитый токен — теперь никаких ручных правок!
+API_KEY = "7ffb3c072df44081ba7fb683935a8f4c" 
+
 DB_NAME = "bot_v25.db"
 
 def init_extended_db():
@@ -30,27 +33,69 @@ def init_extended_db():
     conn.commit()
     conn.close()
 
-def get_today_matches():
-    matches = []
+def get_live_matches_365():
+    """Профессиональный сборщик матчей на сегодня уровня 365scores"""
+    headers = {'X-Auth-Token': API_KEY}
+    live_matches = []
     try:
-        url = "https://www.scorebat.com/video-api/v3/"
-        res = requests.get(url, timeout=5, headers={"User-Agent": "Mozilla/5.0"})
+        url = "https://api.football-data.org/v4/matches"
+        res = requests.get(url, headers=headers, timeout=6)
         if res.status_code == 200:
             data = res.json()
-            for item in data.get('response', [])[:10]:
-                title = item.get('title', '')
-                video_url = item.get('matchviewUrl', '')
-                status = "Завершен" if video_url else "LIVE / Скоро"
-                if " - " in title:
-                    matches.append({"teams": title, "status": status, "video": video_url})
+            for m in data.get('matches', [])[:15]:
+                home_team = m['homeTeam']['name']
+                away_team = m['awayTeam']['name']
+                
+                home_score = m['score']['fullTime']['home'] if m['score']['fullTime']['home'] is not None else 0
+                away_score = m['score']['fullTime']['away'] if m['score']['fullTime']['away'] is not None else 0
+                
+                raw_status = m.get('status', '')
+                if raw_status == 'IN_PLAY':
+                    status = "LIVE 🔥"
+                elif raw_status == 'FINISHED':
+                    status = "Завершен"
+                else:
+                    try: status = m['utcDate'].split('T')[1][:5]
+                    except: status = "Скоро"
+
+                live_matches.append({
+                    "teams": f"{home_team} {home_score} : {away_score} {away_team}",
+                    "status": status,
+                    "league": m['competition']['name']
+                })
     except Exception:
         pass
-    if not matches:
-        matches = [
-            {"teams": "Матчи лиг появятся перед началом туров", "status": "Ожидание", "video": ""},
-            {"teams": "Следите за обновлениями ВАН-ТАЙМ", "status": "Инфо", "video": ""}
+        
+    if not live_matches:
+        live_matches = [
+            {"teams": "Прямые трансляции начнутся с первыми матчами дня", "status": "Ожидание", "league": "Центр LIVE"},
+            {"teams": "Обновление каждую минуту в реальном времени", "status": "Инфо", "league": "ВАН-ТАЙМ"}
         ]
-    return matches
+    return live_matches
+
+def get_real_table(league_code):
+    """Динамический сборщик турнирной таблицы напрямую из футбольной базы"""
+    headers = {'X-Auth-Token': API_KEY}
+    table_data = []
+    try:
+        url = f"https://api.football-data.org/v4/competitions/{league_code}/standings"
+        res = requests.get(url, headers=headers, timeout=5)
+        if res.status_code == 200:
+            data = res.json()
+            standings = data['standings'][0]['table']
+            for team in standings[:6]:
+                table_data.append({
+                    "pos": team['position'],
+                    "name": team['team']['name'],
+                    "games": team['playedGames'],
+                    "points": team['points']
+                })
+    except Exception:
+        pass
+        
+    if not table_data:
+        table_data = [{"pos": 1, "name": "Загрузка таблицы...", "games": 0, "points": 0}]
+    return table_data
 
 def fetch_news_from_db():
     conn = sqlite3.connect(DB_NAME)
@@ -139,9 +184,12 @@ def index():
             "source": "Система", "tag": "#Футбол", "image": "https://images.unsplash.com/photo-1508098682722-e99c43a406b2?w=500", 
             "time": "Сейчас", "likes": 0, "dislikes": 0
         }]
-    matches_today = get_today_matches()
-    # Читаем шаблон интерфейса напрямую из отдельного файла html
-    return template('index.html', news=news_data, matches=matches_today)
+    
+    matches_today = get_live_matches_365()
+    table_apl = get_real_table("PL")
+    table_laliga = get_real_table("PD")
+    
+    return template('index.html', news=news_data, matches=matches_today, t_apl=table_apl, t_la=table_laliga)
 
 def start_bot():
     subprocess.Popen(["python", "football_final.py"])
