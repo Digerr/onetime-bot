@@ -15,7 +15,8 @@
         
         .top-bar { position: sticky; top: 0; z-index: 100; background: var(--bg-color); padding: 15px 20px; display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid var(--border-color); }
         .header { color: var(--accent); font-size: 22px; font-weight: 900; letter-spacing: -0.5px; }
-        
+        .live-indicator { background: #1a222f; padding: 10px 20px; font-weight: 700; font-size: 14px; color: var(--accent); border-bottom: 1px solid var(--border-color); }
+
         .tab-content { display: none; padding: 15px; max-width: 600px; margin: 0 auto; }
         .tab-content.active { display: block; }
 
@@ -43,12 +44,12 @@
         .match-card { background: var(--card-bg); border-radius: 16px; padding: 15px; margin-bottom: 12px; border: 1px solid var(--border-color); }
         .match-header { display: flex; justify-content: space-between; align-items: center; font-size: 12px; border-bottom: 1px dashed var(--border-color); padding-bottom: 8px; margin-bottom: 10px; }
         .league-info { display: flex; align-items: center; gap: 6px; color: var(--text-muted); font-weight: 600; }
-        .league-logo { width: 16px; height: 16px; object-fit: contain; }
         .status-badge { color: var(--accent); font-weight: 700; }
+        .status-badge.live { color: #ff453a; }
         .match-teams { display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; gap: 10px; }
         .team-block { display: flex; flex-direction: column; align-items: center; gap: 6px; font-weight: 600; font-size: 13px; text-align: center; }
         .team-logo { width: 35px; height: 35px; object-fit: contain; }
-        .match-score { font-size: 24px; font-weight: 900; letter-spacing: 1px; background: #1a1a1a; padding: 4px 14px; border-radius: 8px; }
+        .match-score { font-size: 22px; font-weight: 900; background: #1a1a1a; padding: 4px 14px; border-radius: 8px; border: 1px solid var(--border-color); }
 
         .pro-table { width: 100%; border-collapse: collapse; font-size: 14px; }
         .pro-table th { color: var(--text-muted); padding: 12px 5px; border-bottom: 1px solid var(--border-color); font-weight: 500; font-size: 12px; text-align: center; }
@@ -74,6 +75,7 @@
     <div class="top-bar">
         <div class="header">⚽ ВАН-ТАЙМ</div>
     </div>
+    <div class="live-indicator">🔴 LIVE матчи: <span id="live-count-badge">0</span></div>
     
     <div id="toast">Действие выполнено</div>
 
@@ -89,12 +91,17 @@
     </div>
 
     <div id="tab-matches" class="tab-content">
-        <div id="matches-load-box"></div>
+        <div id="matches-live-box" class="news-container"></div>
+    </div>
+
+    <div id="tab-schedule" class="tab-content">
+        <div id="matches-all-box" class="news-container"></div>
     </div>
 
     <div id="tab-tables" class="tab-content">
         <div class="chips-wrapper">
-            <div class="filter-btn active" onclick="loadTableData('PL', this)">Англия</div>
+            <div class="filter-btn active" onclick="loadTableData('RPL', this)">РПЛ 🇷🇺</div>
+            <div class="filter-btn" onclick="loadTableData('PL', this)">Англия</div>
             <div class="filter-btn" onclick="loadTableData('PD', this)">Испания</div>
             <div class="filter-btn" onclick="loadTableData('SA', this)">Италия</div>
             <div class="filter-btn" onclick="loadTableData('BL1', this)">Германия</div>
@@ -110,7 +117,8 @@
 
     <div id="tab-scorers" class="tab-content">
         <div class="chips-wrapper">
-            <div class="filter-btn active" onclick="loadScorersData('PL', this)">Англия</div>
+            <div class="filter-btn active" onclick="loadScorersData('RPL', this)">РПЛ 🇷🇺</div>
+            <div class="filter-btn" onclick="loadScorersData('PL', this)">Англия</div>
             <div class="filter-btn" onclick="loadScorersData('PD', this)">Испания</div>
             <div class="filter-btn" onclick="loadScorersData('SA', this)">Италия</div>
             <div class="filter-btn" onclick="loadScorersData('BL1', this)">Германия</div>
@@ -128,7 +136,10 @@
             <span class="b-nav-icon">📰</span><span>Лента</span>
         </button>
         <button class="b-nav-item" onclick="switchAppTab('tab-matches', this)">
-            <span class="b-nav-icon">🔥</span><span>LIVE</span>
+            <span class="b-nav-icon">🔴</span><span>LIVE</span>
+        </button>
+        <button class="b-nav-item" onclick="switchAppTab('tab-schedule', this)">
+            <span class="b-nav-icon">🗓️</span><span>Матчи</span>
         </button>
         <button class="b-nav-item" onclick="switchAppTab('tab-tables', this)">
             <span class="b-nav-icon">🏆</span><span>Лиги</span>
@@ -144,6 +155,14 @@
         function showToast(msg) {
             let t = document.getElementById("toast"); t.innerText = msg; t.className = "show";
             setTimeout(() => { t.className = t.className.replace("show", ""); }, 1800);
+        }
+
+        async function updateLiveBadge() {
+            try {
+                let res = await fetch('/api/matches/live');
+                let data = await res.json();
+                document.getElementById('live-count-badge').innerText = data.length;
+            } catch(e) {}
         }
 
         async function loadNews() {
@@ -169,40 +188,61 @@
                     </div>
                 `).join('');
                 liveSearch();
-            } catch(e) { document.getElementById('news-container').innerText = "Ошибка загрузки."; }
+            } catch(e) { document.getElementById('news-container').innerText = "Ошибка загрузки ленты."; }
         }
 
-        async function loadMatchesData() {
-            document.getElementById('matches-load-box').innerHTML = '<div class="skeleton"></div><div class="skeleton"></div>';
+        async function loadOnlyLiveMatches() {
+            document.getElementById('matches-live-box').innerHTML = '<div class="skeleton"></div>';
+            try {
+                let res = await fetch('/api/matches/live');
+                let data = await res.json();
+                document.getElementById('matches-live-box').innerHTML = data.map(m => `
+                    <div class="match-card">
+                        <div class="match-header">
+                            <div class="league-info">${m.league}</div>
+                            <div class="status-badge live">${m.status}</div>
+                        </div>
+                        <div class="match-teams">
+                            <div class="team-block"><img src="${m.home_img}" class="team-logo" onerror="this.style.display='none'"> <span>${m.home}</span></div>
+                            <div class="match-score">${m.score}</div>
+                            <div class="team-block"><img src="${m.away_img}" class="team-logo" onerror="this.style.display='none'"> <span>${m.away}</span></div>
+                        </div>
+                    </div>
+                `).join('') || '<div style="text-align:center;padding:40px;color:var(--text-muted);">Прямо сейчас активных матчей нет</div>';
+            } catch(e) {}
+        }
+
+        async function loadScheduleMatches() {
+            document.getElementById('matches-all-box').innerHTML = '<div class="skeleton"></div>';
             try {
                 let res = await fetch('/api/matches');
                 let data = await res.json();
-                document.getElementById('matches-load-box').innerHTML = data.map(m => `
+                document.getElementById('matches-all-box').innerHTML = data.map(m => `
                     <div class="match-card">
                         <div class="match-header">
-                            <div class="league-info">${m.league_img ? `<img src="${m.league_img}" class="league-logo">` : ''} ${m.league}</div>
+                            <div class="league-info">${m.league}</div>
                             <div class="status-badge">${m.status}</div>
                         </div>
                         <div class="match-teams">
-                            <div class="team-block">${m.home_img ? `<img src="${m.home_img}" class="team-logo">` : ''} <span>${m.home}</span></div>
-                            <div class="match-score">${m.score}</div>
-                            <div class="team-block">${m.away_img ? `<img src="${m.away_img}" class="team-logo">` : ''} <span>${m.away}</span></div>
+                            <div class="team-block"><img src="${m.home_img}" class="team-logo" onerror="this.style.display='none'"> <span>${m.home}</span></div>
+                            <div class="match-score" style="font-size:18px;">${m.score}</div>
+                            <div class="team-block"><img src="${m.away_img}" class="team-logo" onerror="this.style.display='none'"> <span>${m.away}</span></div>
                         </div>
                     </div>
-                `).join('') || '<div style="text-align:center;padding:20px;">Нет активных матчей</div>';
+                `).join('') || '<div style="text-align:center;padding:40px;color:var(--text-muted);">Матчей не найдено</div>';
             } catch(e) {}
         }
 
         async function loadTableData(code, btn) {
             if(btn) { document.querySelectorAll('#tab-tables .filter-btn').forEach(b => b.classList.remove('active')); btn.classList.add('active'); }
-            document.getElementById('table-body-async').innerHTML = '<tr><td colspan="7">Загрузка...</td></tr>';
+            document.getElementById('table-body-async').innerHTML = '<tr><td colspan="7">Синхронизация таблицы...</td></tr>';
             try {
                 let res = await fetch('/api/tables/' + code);
                 let data = await res.json();
                 document.getElementById('table-body-async').innerHTML = data.map(t => `
                     <tr>
                         <td style="font-weight:700;color:var(--accent);">${t.pos}</td>
-                        <td><div class="team-cell">${t.crest ? `<img src="${t.crest}" class="t-logo">` : ''} ${t.name}</div></td>
+                        <td><div class="team-cell"><img src="${t.crest}" class="t-logo" onerror="this.style.display='none'"> ${t.name}</div></td>
                         <td>${t.games}</td><td>${t.won}</td><td>${t.draw}</td><td>${t.lost}</td><td style="font-weight:700;">${t.points}</td>
                     </tr>
                 `).join('');
@@ -211,7 +251,7 @@
 
         async function loadScorersData(code, btn) {
             if(btn) { document.querySelectorAll('#tab-scorers .filter-btn').forEach(b => b.classList.remove('active')); btn.classList.add('active'); }
-            document.getElementById('scorers-body-async').innerHTML = '<tr><td colspan="4">Загрузка...</td></tr>';
+            document.getElementById('scorers-body-async').innerHTML = '<tr><td colspan="4">Загрузка бомбардиров...</td></tr>';
             try {
                 let res = await fetch('/api/scorers/' + code);
                 let data = await res.json();
@@ -232,9 +272,10 @@
             btn.classList.add('active');
             
             if(id === 'tab-news') loadNews();
-            if(id === 'tab-matches') loadMatchesData();
-            if(id === 'tab-tables') loadTableData('PL');
-            if(id === 'tab-scorers') loadScorersData('PL');
+            if(id === 'tab-matches') loadOnlyLiveMatches();
+            if(id === 'tab-schedule') loadScheduleMatches();
+            if(id === 'tab-tables') loadTableData('RPL');
+            if(id === 'tab-scorers') loadScorersData('RPL');
         }
 
         function liveSearch() {
@@ -243,7 +284,7 @@
                 let text = card.innerText.toLowerCase();
                 let tag = card.getAttribute('data-tag').toLowerCase();
                 if ((currentFilter === 'all' || tag === currentFilter) && text.includes(query)) card.classList.remove('hidden');
-                else card.add('hidden');
+                else card.classList.add('hidden');
             });
         }
 
@@ -265,7 +306,11 @@
             } catch(e) {}
         }
 
-        window.addEventListener('DOMContentLoaded', () => { loadNews(); });
+        window.addEventListener('DOMContentLoaded', () => { 
+            loadNews();
+            updateLiveBadge();
+            setInterval(updateLiveBadge, 30000);
+        });
     </script>
 </body>
 </html>
