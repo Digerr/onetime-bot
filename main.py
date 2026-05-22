@@ -5,9 +5,10 @@ import requests
 import sqlite3
 import json
 from bottle import route, run, template, response, request
+from datetime import datetime, timedelta
 
-# Твой вшитый токен — теперь никаких ручных правок!
-API_KEY = "7ffb3c072df44081ba7fb683935a8f4c" 
+# Твой проверенный API-ключ
+API_KEY = "c7c58272f8b84c73b73483d15a3a8b03" 
 
 DB_NAME = "bot_v25.db"
 
@@ -34,47 +35,60 @@ def init_extended_db():
     conn.close()
 
 def get_live_matches_365():
-    """Профессиональный сборщик матчей на сегодня уровня 365scores"""
+    """Расширенный сборщик матчей: ищет игры в радиусе 3 дней, чтобы центр LIVE никогда не пустовал"""
     headers = {'X-Auth-Token': API_KEY}
     live_matches = []
+    
+    # Берем окно: вчера, сегодня, завтра
+    date_from = (datetime.now() - timedelta(days=1)).strftime('%Y-%m-%d')
+    date_to = (datetime.now() + timedelta(days=2)).strftime('%Y-%m-%d')
+    
     try:
-        url = "https://api.football-data.org/v4/matches"
+        # Запрашиваем матчи в широком диапазоне дат
+        url = f"https://api.football-data.org/v4/matches?dateFrom={date_from}&dateTo={date_to}"
         res = requests.get(url, headers=headers, timeout=6)
         if res.status_code == 200:
             data = res.json()
-            for m in data.get('matches', [])[:15]:
-                home_team = m['homeTeam']['name']
-                away_team = m['awayTeam']['name']
-                
-                home_score = m['score']['fullTime']['home'] if m['score']['fullTime']['home'] is not None else 0
-                away_score = m['score']['fullTime']['away'] if m['score']['fullTime']['away'] is not None else 0
-                
-                raw_status = m.get('status', '')
-                if raw_status == 'IN_PLAY':
-                    status = "LIVE 🔥"
-                elif raw_status == 'FINISHED':
-                    status = "Завершен"
-                else:
-                    try: status = m['utcDate'].split('T')[1][:5]
-                    except: status = "Скоро"
+            matches_list = data.get('matches', [])
+            
+            if matches_list:
+                for m in matches_list[:20]: # Показываем до 20 матчей в списке
+                    home_team = m['homeTeam']['name']
+                    away_team = m['awayTeam']['name']
+                    
+                    home_score = m['score']['fullTime']['home'] if m['score']['fullTime']['home'] is not None else 0
+                    away_score = m['score']['fullTime']['away'] if m['score']['fullTime']['away'] is not None else 0
+                    
+                    raw_status = m.get('status', '')
+                    if raw_status == 'IN_PLAY':
+                        status = "LIVE 🔥"
+                    elif raw_status == 'FINISHED':
+                        status = "Завершен"
+                    else:
+                        # Красиво форматируем дату и время старта
+                        try:
+                            match_date = m['utcDate'].split('T')[0].split('-')[2]
+                            match_time = m['utcDate'].split('T')[1][:5]
+                            status = f"{match_date} мая, {match_time}"
+                        except:
+                            status = "Скоро"
 
-                live_matches.append({
-                    "teams": f"{home_team} {home_score} : {away_score} {away_team}",
-                    "status": status,
-                    "league": m['competition']['name']
-                })
+                    live_matches.append({
+                        "teams": f"{home_team} {home_score} : {away_score} {away_team}",
+                        "status": status,
+                        "league": m['competition']['name']
+                    })
     except Exception:
         pass
         
     if not live_matches:
         live_matches = [
-            {"teams": "Прямые трансляции начнутся с первыми матчами дня", "status": "Ожидание", "league": "Центр LIVE"},
-            {"teams": "Обновление каждую минуту в реальном времени", "status": "Инфо", "league": "ВАН-ТАЙМ"}
+            {"teams": "Сегодня в топ-лигах API затишье. Матчи появятся ближе к турам.", "status": "Инфо", "league": "Центр LIVE"},
+            {"teams": "Переключитесь на вкладку 'Лента' или 'Таблицы'", "status": "Инфо", "league": "ВАН-ТАЙМ"}
         ]
     return live_matches
 
 def get_real_table(league_code):
-    """Динамический сборщик турнирной таблицы напрямую из футбольной базы"""
     headers = {'X-Auth-Token': API_KEY}
     table_data = []
     try:
