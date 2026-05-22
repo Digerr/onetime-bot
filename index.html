@@ -19,24 +19,21 @@
         * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
         body { background-color: var(--bg-color); color: var(--text-color); font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "Segoe UI", Roboto, Helvetica, sans-serif; margin: 0; padding: 0 0 80px 0; transition: background 0.3s; }
         
-        /* Верхний бар */
         .top-bar { position: sticky; top: 0; z-index: 100; background: var(--bg-color); padding: 15px 20px; display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid var(--border-color); }
-        .header { color: var(--accent); font-size: 22px; font-weight: 900; letter-spacing: -0.5px; display: flex; align-items: center; gap: 8px; }
-        .theme-btn { background: var(--card-bg); border: 1px solid var(--border-color); color: var(--text-color); padding: 6px 14px; border-radius: 20px; cursor: pointer; font-weight: 600; font-size: 13px; box-shadow: 0 2px 8px rgba(0,0,0,0.05); }
+        .header { color: var(--accent); font-size: 22px; font-weight: 900; letter-spacing: -0.5px; }
+        .theme-btn { background: var(--card-bg); border: 1px solid var(--border-color); color: var(--text-color); padding: 6px 14px; border-radius: 20px; cursor: pointer; font-weight: 600; font-size: 13px; }
 
         .tab-content { display: none; padding: 15px; max-width: 600px; margin: 0 auto; animation: fadeIn 0.3s ease-out; }
         .tab-content.active { display: block; }
         @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
 
-        /* Поиск и фильтры */
         .search-input { width: 100%; background: var(--card-bg); border: 1px solid var(--border-color); color: var(--text-color); padding: 14px 20px; border-radius: 12px; font-size: 15px; outline: none; margin-bottom: 15px; }
         
         .chips-wrapper { overflow-x: auto; white-space: nowrap; padding-bottom: 10px; margin-bottom: 15px; scrollbar-width: none; }
         .chips-wrapper::-webkit-scrollbar { display: none; }
-        .filter-btn { display: inline-block; background: var(--card-bg); color: var(--text-muted); border: 1px solid var(--border-color); padding: 8px 16px; border-radius: 20px; cursor: pointer; font-size: 13px; font-weight: 600; margin-right: 8px; }
+        .filter-btn { display: inline-block; background: var(--card-bg); color: var(--text-muted); border: 1px solid var(--border-color); padding: 8px 16px; border-radius: 20px; cursor: pointer; font-size: 13px; font-weight: 600; margin-right: 8px; outline: none; }
         .filter-btn.active { background: var(--accent); color: #fff; border-color: var(--accent); }
 
-        /* Лента новостей */
         .news-container { display: flex; flex-direction: column; gap: 15px; }
         .card { background: var(--card-bg); border-radius: 16px; overflow: hidden; border: 1px solid var(--border-color); position: relative; }
         .card.hidden { display: none; }
@@ -55,7 +52,6 @@
         .card-footer { display: flex; justify-content: space-between; align-items: center; font-size: 12px; color: var(--text-muted); margin-top: 15px; padding-top: 15px; border-top: 1px solid var(--border-color); }
         .tg-link-btn { background: rgba(50, 215, 75, 0.1); color: var(--accent); padding: 6px 12px; border-radius: 12px; font-weight: 700; text-decoration: none; font-size: 12px; }
 
-        /* Матчи LIVE */
         .match-card { background: var(--card-bg); border-radius: 16px; padding: 15px; margin-bottom: 12px; border: 1px solid var(--border-color); }
         .match-header { display: flex; justify-content: space-between; align-items: center; font-size: 12px; border-bottom: 1px dashed var(--border-color); padding-bottom: 10px; margin-bottom: 10px; }
         .league-info { display: flex; align-items: center; gap: 8px; color: var(--text-muted); font-weight: 600; }
@@ -69,22 +65,19 @@
         .match-score { font-size: 28px; font-weight: 900; letter-spacing: 2px; }
         .goal-scorers { font-size: 12px; color: var(--text-muted); text-align: center; margin-top: 12px; }
 
-        /* Таблицы */
         .pro-table { width: 100%; border-collapse: collapse; font-size: 14px; }
         .pro-table th { color: var(--text-muted); padding: 12px 5px; border-bottom: 1px solid var(--border-color); font-weight: 500; font-size: 12px; }
         .pro-table td { padding: 14px 5px; border-bottom: 1px solid var(--border-color); }
         .team-cell { display: flex; align-items: center; gap: 10px; font-weight: 600; }
         .t-logo { width: 22px; height: 22px; object-fit: contain; }
 
-        /* Скелетная загрузка */
         .skeleton { background: linear-gradient(90deg, var(--card-bg) 25%, var(--border-color) 50%, var(--card-bg) 75%); background-size: 200% 100%; animation: shimmer 1.5s infinite; border-radius: 8px; }
         @keyframes shimmer { 0% { background-position: 200% 0; } 100% { background-position: -200% 0; } }
         .sk-match { height: 120px; border-radius: 16px; margin-bottom: 12px; }
         .sk-row { height: 40px; margin-bottom: 10px; }
 
-        /* Нижнее меню */
         .bottom-nav { position: fixed; bottom: 0; left: 0; width: 100%; background: var(--bottom-nav-bg); backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px); border-top: 1px solid var(--glass-border); display: flex; justify-content: space-around; padding: 10px 0 calc(10px + env(safe-area-inset-bottom)); z-index: 1000; }
-        .b-nav-item { display: flex; flex-direction: column; align-items: center; gap: 4px; color: var(--text-muted); background: none; border: none; cursor: pointer; font-size: 10px; font-weight: 600; flex: 1; }
+        .b-nav-item { display: flex; flex-direction: column; align-items: center; gap: 4px; color: var(--text-muted); background: none; border: none; cursor: pointer; font-size: 10px; font-weight: 600; flex: 1; outline: none; }
         .b-nav-icon { font-size: 22px; transition: 0.2s transform; }
         .b-nav-item.active { color: var(--text-color); }
         .b-nav-item.active .b-nav-icon { transform: scale(1.15); }
@@ -145,7 +138,7 @@
 
     <div id="tab-tables" class="tab-content">
         <div class="chips-wrapper">
-            <div class="filter-btn active" onclick="loadTableData('PL', this)">Англия</div>
+            <div class="filter-btn" onclick="loadTableData('PL', this)">Англия</div>
             <div class="filter-btn" onclick="loadTableData('PD', this)">Испания</div>
             <div class="filter-btn" onclick="loadTableData('SA', this)">Италия</div>
             <div class="filter-btn" onclick="loadTableData('BL1', this)">Германия</div>
@@ -155,7 +148,7 @@
             <table class="pro-table">
                 <thead><tr><th>#</th><th style="text-align:left;">Клуб</th><th>И</th><th>В</th><th>Н</th><th>П</th><th>О</th></tr></thead>
                 <tbody id="table-body-async">
-                    <tr><td colspan="7"><div class="skeleton sk-row"></div><div class="skeleton sk-row"></div></td></tr>
+                    <tr><td colspan="7" style="text-align:center;padding:20px;color:var(--text-muted);">Выберите лигу выше</td></tr>
                 </tbody>
             </table>
         </div>
@@ -163,7 +156,7 @@
 
     <div id="tab-scorers" class="tab-content">
         <div class="chips-wrapper">
-            <div class="filter-btn active" onclick="loadScorersData('PL', this)">Англия</div>
+            <div class="filter-btn" onclick="loadScorersData('PL', this)">Англия</div>
             <div class="filter-btn" onclick="loadScorersData('PD', this)">Испания</div>
             <div class="filter-btn" onclick="loadScorersData('SA', this)">Италия</div>
             <div class="filter-btn" onclick="loadScorersData('BL1', this)">Германия</div>
@@ -172,7 +165,7 @@
             <table class="pro-table">
                 <thead><tr><th style="text-align:left;">Игрок</th><th style="text-align:left;">Клуб</th><th>⚽</th><th>🅰️</th></tr></thead>
                 <tbody id="scorers-body-async">
-                    <tr><td colspan="4"><div class="skeleton sk-row"></div><div class="skeleton sk-row"></div></td></tr>
+                    <tr><td colspan="4" style="text-align:center;padding:20px;color:var(--text-muted);">Выберите лигу выше</td></tr>
                 </tbody>
             </table>
         </div>
@@ -232,7 +225,7 @@
             let container = document.getElementById('favs-container'); 
             container.innerHTML = "";
             if(savedBookmarks.length === 0) { 
-                container.innerHTML = "<div style='color:var(--text-muted); padding: 20px 0; text-align:center;'>Тут пока пусто. Сохраняйте новости, чтобы прочитать их позже.</div>"; 
+                container.innerHTML = "<div style='color:var(--text-muted); padding: 20px 0; text-align:center;'>Тут пока пусто. Сохраняйте новости.</div>"; 
                 return; 
             }
             savedBookmarks.forEach(id => {
@@ -319,4 +312,9 @@
             document.getElementById(id).classList.add('active');
             document.querySelectorAll('.b-nav-item').forEach(b => b.classList.remove('active'));
             btn.classList.add('active');
-            window.scrollTo(
+            window.scrollTo({ top: 0, behavior: 'smooth' }); 
+            
+            if(id === 'tab-matches') loadMatchesData();
+            if(id === 'tab-tables') loadTableData('PL');
+            if(id === 'tab-scorers') loadScorersData('PL');
+            if(id === 'tab-favs') renderFav
