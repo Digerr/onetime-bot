@@ -3,7 +3,8 @@ import subprocess
 import threading
 from bottle import route, run, template
 
-DB_NAME = "football.db"
+# Подключаем сайт к реальной базе бота
+DB_NAME = "bot_v25.db"
 
 @route('/')
 def index():
@@ -11,20 +12,20 @@ def index():
     conn = sqlite3.connect(DB_NAME)
     cursor = conn.cursor()
     try:
-        # Достаем последние 30 сохраненных новостей
-        cursor.execute("SELECT title, description, source FROM news ORDER BY id DESC LIMIT 30")
+        # Достаем последние 30 опубликованных новостей из таблицы бота
+        cursor.execute("SELECT title, description, source FROM posted_news ORDER BY id DESC LIMIT 30")
         rows = cursor.fetchall()
     except sqlite3.OperationalError:
-        # Если таблица news еще не создана ботом
         rows = []
     conn.close()
     
-    news_data = [{"title": r[0], "desc": r[1], "source": r[2]} for r in rows]
+    # Фильтруем пустые строчки, если они попадутся
+    news_data = [{"title": r[0], "desc": r[1], "source": r[2]} for r in rows if r[0] and r[1]]
     
     if not news_data:
         news_data = [{
-            "title": "Лента обновляется", 
-            "desc": "Бот собирает свежие футбольные инсайды. Загляните через пару минут!", 
+            "title": "Лента «ВАН-ТАЙМ» обновляется", 
+            "desc": "Бот прямо сейчас сканирует Sky Sports, Marca и другие источники. Свежие инсайды появятся с минуты на минуту!", 
             "source": "Система"
         }]
 
@@ -63,14 +64,11 @@ def index():
     return template(html_page, news=news_data)
 
 def start_bot():
-    # Запуск твоего основного файла в фоне
+    # Запускаем обновленный файл бота
     subprocess.Popen(["python", "football_final.py"])
 
 if __name__ == "__main__":
-    # 1. Запускаем бота в отдельном потоке
     threading.Thread(target=start_bot, daemon=True).start()
-    
-    # 2. Запускаем сайт наружу для Railway
     port = int(os.environ.get("PORT", 8080))
     run(host='0.0.0.0', port=port)
     
